@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Keyword OCR Organizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-logo">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M15 3H7C5.89543 3 5 3.89543 5 5V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7L15 3Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <circle cx="11" cy="14" r="3" stroke="currentColor" stroke-width="2"/>
+                    <path d="M13 16L16 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                <div class="logo-text">
+                    <h1>FocusOCR</h1>
+                    <p>Local Image Search & Organizer</p>
+                </div>
+            </div>
+            <div class="system-status" id="system-status">
+                <span class="status-dot green"></span>
+                <span class="status-text">Ready</span>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Layout -->
+        <main class="dashboard-grid">
+            
+            <!-- Sidebar: Controls & Settings -->
+            <section class="panel settings-panel">
+                <h2 class="panel-title">Configuration</h2>
+                
+                <!-- Folders Configuration -->
+                <div class="form-group">
+                    <label for="target-dir">Target Directory</label>
+                    <div class="input-with-btn">
+                        <input type="text" id="target-dir" placeholder="Select folder to scan..." autocomplete="off">
+                        <button type="button" class="btn btn-secondary" id="btn-browse-target" title="Browse target folder">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                            Browse
+                        </button>
+                    </div>
+                    <div class="history-list" id="target-history-list"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="dest-dir">Destination Directory</label>
+                    <div class="input-with-btn">
+                        <input type="text" id="dest-dir" placeholder="Select folder to save matches..." autocomplete="off">
+                        <button type="button" class="btn btn-secondary" id="btn-browse-dest" title="Browse destination folder">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                            Browse
+                        </button>
+                    </div>
+                    <div class="history-list" id="dest-history-list"></div>
+                </div>
+
+
+                <div class="form-group toggle-group">
+                    <label class="switch-label">
+                        <input type="checkbox" id="recursive-search" checked>
+                        <span class="switch-slider"></span>
+                        <span class="label-text">Scan subfolders recursively</span>
+                    </label>
+                </div>
+
+                <hr class="separator">
+
+                <!-- Keywords Configuration -->
+                <div class="form-group">
+                    <label>Keywords (Up to 3)</label>
+                    <div class="keywords-inputs">
+                        <div class="keyword-item">
+                            <span class="kw-badge">1</span>
+                            <input type="text" class="keyword-input" id="keyword-1" placeholder="First keyword..." autocomplete="off">
+                        </div>
+                        <div class="keyword-item">
+                            <span class="kw-badge">2</span>
+                            <input type="text" class="keyword-input" id="keyword-2" placeholder="Second keyword (optional)..." autocomplete="off">
+                        </div>
+                        <div class="keyword-item">
+                            <span class="kw-badge">3</span>
+                            <input type="text" class="keyword-input" id="keyword-3" placeholder="Third keyword (optional)..." autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="match-logic">Keyword Matching Logic</label>
+                    <select id="match-logic" class="select-input">
+                        <option value="any">Match ANY keyword (OR)</option>
+                        <option value="all">Match ALL keywords (AND)</option>
+                    </select>
+                </div>
+
+                <div class="action-buttons">
+                    <button id="btn-start-scan" class="btn btn-primary btn-large">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        Start OCR Scan
+                    </button>
+                    <button id="btn-stop-scan" class="btn btn-danger btn-large hidden">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/></svg>
+                        Stop Scan
+                    </button>
+                </div>
+            </section>
+
+            <!-- Main Work Area: Stats & Results -->
+            <div class="main-content">
+                
+                <!-- Statistics Cards -->
+                <section class="stats-container">
+                    <div class="stat-card">
+                        <div class="stat-info">
+                            <span class="stat-label">Total Images</span>
+                            <span class="stat-value" id="stat-total">0</span>
+                        </div>
+                        <div class="stat-icon purple">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-info">
+                            <span class="stat-label">Processed</span>
+                            <span class="stat-value" id="stat-processed">0</span>
+                        </div>
+                        <div class="stat-icon blue">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-info">
+                            <span class="stat-label">Matched & Copied</span>
+                            <span class="stat-value" id="stat-matches">0</span>
+                        </div>
+                        <div class="stat-icon green">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Progress Details Panel -->
+                <section class="panel progress-panel hidden" id="progress-panel">
+                    <div class="progress-header">
+                        <span class="progress-status" id="progress-status-text">Scanning folder...</span>
+                        <span class="progress-percentage" id="progress-percent-text">0%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progress-bar-fill"></div>
+                    </div>
+                    <div class="progress-details">
+                        <span class="current-file-label">Current:</span>
+                        <span class="current-file-path" id="progress-current-file">None</span>
+                    </div>
+                </section>
+
+                <!-- Results Section -->
+                <section class="panel results-panel">
+                    <div class="results-header">
+                        <h2 class="panel-title">Matches Gallery <span class="badge hidden" id="gallery-count">0</span></h2>
+                        <div class="results-actions">
+                            <button id="btn-clear-results" class="btn btn-text">Clear Gallery</button>
+                        </div>
+                    </div>
+
+                    <!-- Empty State -->
+                    <div class="empty-state" id="empty-state">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/>
+                        </svg>
+                        <h3>No matches displayed</h3>
+                        <p>Configure paths and keywords, then start the scan to view matched images here.</p>
+                    </div>
+
+                    <!-- Results Grid -->
+                    <div class="results-grid hidden" id="results-grid">
+                        <!-- Cards will be dynamically inserted here -->
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Image Preview Lightbox -->
+    <div class="lightbox hidden" id="lightbox">
+        <div class="lightbox-overlay"></div>
+        <div class="lightbox-content">
+            <button class="lightbox-close" id="btn-lightbox-close">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <img src="" alt="Full Preview" id="lightbox-img">
+            <div class="lightbox-meta">
+                <h4 id="lightbox-filename">Filename</h4>
+                <p id="lightbox-path">Path</p>
+                <div class="lightbox-ocr" id="lightbox-ocr-snippets">
+                    <!-- Snippets show here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
