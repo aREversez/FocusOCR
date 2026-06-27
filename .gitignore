@@ -1,5 +1,29 @@
+# Python
 __pycache__/
-assets/
+*.py[cod]
+*.egg-info/
+*.egg
+.venv/
+venv/
+env/
+
+# Build artifacts
 build/
 dist/
-FocusOCR.spec
+*.spec
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Environment
+.env
+
+# files
+assets/

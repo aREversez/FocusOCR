@@ -6,35 +6,36 @@ This is ideal for anyone who accumulates a large volume of screenshots, referenc
 
 ---
 
-## 🌟 Key Features
+## Key Features
 
-- **Local & Private**: Runs 100% offline. No images are uploaded to external APIs.
+- **Local & Private**: Runs 100% offline. No images are uploaded to external APIs. No external fonts or CDNs required.
 - **Accurate Chinese & English OCR**: Powered by **RapidOCR** (using ONNX Runtime and the state-of-the-art PaddleOCR PP-OCRv4 model weights).
 - **Keyword Subdirectory Auto-Sorting**: Automatically creates folders inside your destination directory named after the matching keywords (e.g., `dest_folder/Invoice/`, `dest_folder/Report/`) and places matching copies inside.
-- **Folder Selection History**: Keeps track of up to 5 recently selected directories for both Target and Destination fields so you can quickly re-select them. Items can be deleted from history at any time.
+- **Folder Selection History**: Keeps track of recently selected directories for both Target and Destination fields via `localStorage`. Items can be deleted from history at any time.
 - **Multi-Keyword Matching**: Supports filtering using up to 3 keywords with logical operator controls (Match **ANY** vs. Match **ALL**).
+- **Real Scan Cancellation**: The Stop button actually interrupts the scan server-side — no wasted OCR work after cancellation.
 - **Modern User Interface**: A responsive glassmorphic dashboard featuring statistical cards, real-time progress bars, and a clean result card gallery.
 - **Integrated Preview & Lightbox**: Review matching screenshots directly within the browser with highlighted keyword matches in detected text snippets.
 - **Native Folder Browser**: Integrates directly with native Windows directory dialogs, avoiding sandbox folder selection limits.
 - **Conflict Resolution**: Auto-renames files (e.g., `screenshot_1.png`) if duplicates are found in the destination directory to avoid overwriting.
 
-
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 The project code is organized as follows:
 - **[main.py](file:///n:/AI/images-keyword/main.py)**: The application entrypoint. Automatically spins up the backend and launches the web interface.
-- **[backend/app.py](file:///n:/AI/images-keyword/backend/app.py)**: The FastAPI server that handles HTTP requests, serve static files, and streams scan progress via Server-Sent Events (SSE).
-- **[backend/ocr_engine.py](file:///n:/AI/images-keyword/backend/ocr_engine.py)**: The core OCR engine which uses RapidOCR to parse images and filter files.
-- **[backend/folder_picker.py](file:///n:/AI/images-keyword/backend/folder_picker.py)**: Tkinter dialog wrapper providing native Windows folder pickers.
+- **[backend/app.py](file:///n:/AI/images-keyword/backend/app.py)**: The FastAPI server that handles HTTP requests, serves static files, and streams scan progress via Server-Sent Events (SSE). Includes a `/api/stop-scan` endpoint for cancellation.
+- **[backend/ocr_engine.py](file:///n:/AI/images-keyword/backend/ocr_engine.py)**: The core OCR engine which uses RapidOCR to parse images, match keywords, and copy files. Supports server-side cancellation via `threading.Event`.
+- **[backend/config.py](file:///n:/AI/images-keyword/backend/config.py)**: User-configurable settings (port, host, OCR snippet limits, etc.) loaded from `~/.focusocr/config.json`.
+- **[backend/folder_picker.py](file:///n:/AI/images-keyword/backend/folder_picker.py)**: Tkinter dialog wrapper providing native Windows folder pickers, running in a separate thread with thread-safe result passing.
 - **[frontend/index.html](file:///n:/AI/images-keyword/frontend/index.html)**: The dashboard markup structure.
-- **[frontend/style.css](file:///n:/AI/images-keyword/frontend/style.css)**: The CSS styling (Sleek dark mode, animations, custom scrollbars).
-- **[frontend/app.js](file:///n:/AI/images-keyword/frontend/app.js)**: Orchestrates client UI actions, SSE streams, lightbox triggers, and clipboard copies.
+- **[frontend/style.css](file:///n:/AI/images-keyword/frontend/style.css)**: The CSS styling (dark mode, animations, custom scrollbars) using native system font stacks — no external font downloads.
+- **[frontend/app.js](file:///n:/AI/images-keyword/frontend/app.js)**: Orchestrates client UI actions, SSE streams, lightbox triggers, clipboard copies, and history management.
 
 ---
 
-## 🚀 Standalone Executable (Zero Setup)
+## Standalone Executable (Zero Setup)
 
 For machines without Python or any library packages installed, you can run FocusOCR directly:
 1. Navigate to the `dist/` directory inside the project folder: **[dist/FocusOCR.exe](file:///n:/AI/images-keyword/dist/FocusOCR.exe)**.
@@ -46,7 +47,7 @@ For machines without Python or any library packages installed, you can run Focus
 
 ---
 
-## 💻 Developer Setup (Running from Source)
+## Developer Setup (Running from Source)
 
 If you prefer to run from the Python source:
 
@@ -62,16 +63,43 @@ pip install fastapi uvicorn Pillow rapidocr_onnxruntime
 python main.py
 ```
 
+The server starts on **port 9000** by default (falls back to 9001, 9002, etc. if occupied). You can change the default port and other settings via `~/.focusocr/config.json` (see [Configuration](#configuration)).
+
 ### Compiling to Standalone Executable
-If you modify the source files and wish to rebuild the `.exe`, install PyInstaller and run the compilation script:
+If you modify the source files and wish to rebuild the `.exe`, install PyInstaller and run:
 ```bash
 pip install pyinstaller
-pyinstaller --clean --onefile --name FocusOCR --add-data "frontend;frontend" main.py
+pyinstaller --clean FocusOCR.spec
 ```
-This creates a fresh executable inside the `dist/` directory.
+This creates a fresh executable inside the `dist/` directory. The `.spec` file is pre-configured with all necessary hidden imports, data bundling, and unused-package exclusions to keep the binary size small.
 
+---
 
-## 📖 How to Use
+## Configuration
+
+Settings are stored in `~/.focusocr/config.json` and are created with defaults on first run. You can edit this file to change:
+
+```json
+{
+  "host": "127.0.0.1",
+  "start_port": 9000,
+  "ocr_confidence_threshold": 0.0,
+  "max_snippets_per_match": 3,
+  "max_history_per_dir": 5
+}
+```
+
+| Setting | Default | Description |
+|---|---|---|
+| `host` | `"127.0.0.1"` | Bind address for the web server |
+| `start_port` | `9000` | First port to try; scans 9000, 9001, ... if busy |
+| `ocr_confidence_threshold` | `0.0` | Minimum OCR confidence to include a text result (0.0 = accept all) |
+| `max_snippets_per_match` | `3` | Number of text snippets shown per matched image in the gallery |
+| `max_history_per_dir` | `5` | Number of recent directories kept in the folder history dropdown |
+
+---
+
+## How to Use
 
 1. **Launch the app**:
    Navigate to the project root and run:
@@ -90,6 +118,7 @@ This creates a fresh executable inside the `dist/` directory.
 4. **Run the Scan**:
    - Click **Start OCR Scan**.
    - Watch the progress bar stream. Matched files will copy instantly into folders like `dest_folder/Invoice/` and `dest_folder/Report/` (if an image matches multiple keywords, a copy will be sorted into each corresponding folder for easy review).
+   - Click **Stop Scan** to cancel a running scan — processing halts immediately server-side.
 5. **View Results**:
    - Matches will dynamically load in the gallery card grid.
    - Click **Preview** or tap the thumbnail to open the Lightbox view and check the image in full size along with the matching OCR text snippets.
@@ -97,7 +126,7 @@ This creates a fresh executable inside the `dist/` directory.
 
 ---
 
-## 🛠️ Tech Details & Libraries Used
+## Tech Details & Libraries Used
 
 - **Web Server**: [FastAPI](https://fastapi.tiangolo.com/) + [Uvicorn](https://www.uvicorn.org/) (Python)
 - **OCR Engine**: [RapidOCR ONNX Runtime](https://github.com/RapidAI/RapidOCR)

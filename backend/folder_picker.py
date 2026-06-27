@@ -1,9 +1,10 @@
 import tkinter as tk
 from tkinter import filedialog
 import threading
+import queue
 from typing import Optional
 
-def _open_picker(result_container: list) -> None:
+def _open_picker(result_queue: queue.Queue) -> None:
     """Helper running in a separate thread to open the folder picker dialog."""
     try:
         root = tk.Tk()
@@ -17,26 +18,25 @@ def _open_picker(result_container: list) -> None:
             title="Select Folder",
             mustexist=True
         )
-        result_container.append(folder)
+        result_queue.put(folder)
         root.destroy()
     except Exception as e:
-        result_container.append(e)
+        result_queue.put(e)
 
 def choose_directory() -> Optional[str]:
     """
     Opens a native directory selection dialog and returns the selected path.
     Runs the tkinter dialog in a separate thread to avoid freezing the main process.
     """
-    result = []
-    # Run tkinter on a separate thread to ensure thread-safety and prevent GUI freeze
-    thread = threading.Thread(target=_open_picker, args=(result,))
+    result_queue: queue.Queue = queue.Queue()
+    thread = threading.Thread(target=_open_picker, args=(result_queue,))
     thread.start()
     thread.join()
     
-    if not result:
+    if result_queue.empty():
         return None
     
-    val = result[0]
+    val = result_queue.get()
     if isinstance(val, Exception):
         raise val
         

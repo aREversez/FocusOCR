@@ -2,10 +2,12 @@ import os
 import shutil
 import time
 import re
+import threading
 from typing import List, Generator, Dict, Any, Tuple
 from pathlib import Path
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
+from backend.config import load_settings
 
 # Supported image file extensions
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.bmp', '.webp', '.tiff'}
@@ -20,6 +22,15 @@ class OCREngine:
     def __init__(self):
         # Initialize RapidOCR engine
         self._ocr = RapidOCR()
+        self._cancel_event = threading.Event()
+
+    def cancel_scan(self):
+        """Signals the current scan to stop at the next opportunity."""
+        self._cancel_event.set()
+
+    def reset_cancel(self):
+        """Clears the cancellation signal for a new scan."""
+        self._cancel_event.clear()
 
     def get_all_images(self, target_dir: str, recursive: bool = True) -> List[Path]:
         """Finds all supported images in the target directory."""
@@ -144,6 +155,9 @@ class OCREngine:
         """
         Generator yielding real-time scanning progress updates.
         """
+        self.reset_cancel()
+        _settings = load_settings()
+        _max_snippets = _settings.max_snippets_per_match
         try:
             images = self.get_all_images(target_dir, recursive)
         except Exception as e:
@@ -185,6 +199,16 @@ class OCREngine:
         }
 
         for img_path in images:
+            if self._cancel_event.is_set():
+                yield {
+                    "status": "cancelled",
+                    "total_files": total_files,
+                    "processed_files": processed_files,
+                    "matched_files": matched_files,
+                    "message": f"Scan cancelled by user after processing {processed_files} of {total_files} images."
+                }
+                return
+
             processed_files += 1
             
             # Perform OCR
@@ -222,7 +246,7 @@ class OCREngine:
                     "filename": img_path.name,
                     "original_path": str(img_path),
                     "copied_path": copied_path_str,
-                    "snippets": snippets[:3]  # Limit to top 3 snippets for display brevity
+                    "snippets": snippets[:_max_snippets]  # Limit snippets for display brevity
                 } if is_match else None
             }
 

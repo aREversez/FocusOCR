@@ -304,6 +304,11 @@ function startScan() {
                 elGalleryCount.classList.remove('hidden');
             }
         } 
+        else if (data.status === 'cancelled') {
+            elProgressStatus.textContent = 'Cancelled';
+            elProgressCurrent.textContent = data.message || 'Scan was cancelled.';
+            endScan('Ready', 'orange');
+        }
         else if (data.status === 'complete') {
             elProgressBarFill.style.width = '100%';
             elProgressPercent.textContent = '100%';
@@ -329,7 +334,13 @@ function startScan() {
 }
 
 // Stop scanning routine
-function stopScan() {
+async function stopScan() {
+    // Tell the server to cancel the scan
+    try {
+        await fetch('/api/stop-scan');
+    } catch (e) {
+        console.error('Failed to notify server of cancellation:', e);
+    }
     if (sseConnection) {
         sseConnection.close();
         sseConnection = null;
@@ -373,10 +384,12 @@ function closeLightbox() {
     document.body.style.overflow = ''; // Unlock scroll
 }
 
-// History Management
+// History Management — localStorage keys are namespaced to avoid collisions
+const HISTORY_KEY = 'focusocr_v1_history';
+
 function loadHistory(type) {
     try {
-        const stored = localStorage.getItem(`focusocr_history_${type}`);
+        const stored = localStorage.getItem(`${HISTORY_KEY}_${type}`);
         return stored ? JSON.parse(stored) : [];
     } catch (e) {
         return [];
@@ -385,7 +398,7 @@ function loadHistory(type) {
 
 function saveHistory(type, history) {
     try {
-        localStorage.setItem(`focusocr_history_${type}`, JSON.stringify(history));
+        localStorage.setItem(`${HISTORY_KEY}_${type}`, JSON.stringify(history));
     } catch (e) {}
 }
 

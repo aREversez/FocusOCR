@@ -1,5 +1,6 @@
 import json
 import sys
+import asyncio
 import urllib.parse
 from pathlib import Path
 from typing import List, Optional
@@ -8,10 +9,36 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.folder_picker import choose_directory
-from backend.ocr_engine import OCREngine, IMAGE_EXTENSIONS
+# Same frozen-path setup as main.py, needed because this module also
+# imports sibling modules within the backend package.
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    sys.path.insert(0, sys._MEIPASS)
+
+from .folder_picker import choose_directory
+from .ocr_engine import OCREngine, IMAGE_EXTENSIONS
+
+
+def _silence_transport_reset(loop, context):
+    """Silence the benign ConnectionResetError that appears when a client
+    disconnects from an SSE stream on Windows (proactor event loop)."""
+    exc = context.get("exception")
+    msg = context.get("message", "")
+    if isinstance(exc, ConnectionResetError) and "_call_connection_lost" in msg:
+        return
+    loop.default_exception_handler(context)
+
 
 app = FastAPI(title="Image Keyword OCR Organizer")
+
+
+@app.on_event("startup")
+async def _setup_loop_handler():
+    """Install the exception handler on the active event loop uvicorn created."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.set_exception_handler(_silence_transport_reset)
+    except RuntimeError:
+        pass  # No running loop; nothing to do.
 
 # Enable CORS for local development
 app.add_middleware(
@@ -56,6 +83,12 @@ def get_image(path: str):
         
     return FileResponse(str(file_path))
 
+@app.get("/api/stop-scan")
+def stop_scan():
+    """Cancels an in-progress OCR scan."""
+    ocr_engine.cancel_scan()
+    return {"status": "cancelling"}
+
 @app.get("/api/scan-stream")
 def scan_stream(
     target_dir: str,
@@ -67,6 +100,9 @@ def scan_stream(
     """
     Starts the OCR scan and streams real-time updates as Server-Sent Events (SSE).
     """
+    if match_logic not in ("any", "all"):
+        raise HTTPException(status_code=400, detail="match_logic must be 'any' or 'all'")
+
     # Clean and split keywords
     clean_kws = []
     for kw in keywords:
@@ -93,7 +129,14 @@ def scan_stream(
                 recursive=recursive
             )
             for event in generator:
-                yield f"data: {json.dumps(event)}\n\n"
+                try:
+                    yield f"data: {json.dumps(event)}\n\n"
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                if event.get("status") in ("complete", "cancelled", "error"):
+                    break
+        except (BrokenPipeError, ConnectionResetError, GeneratorExit):
+            return
         except Exception as e:
             error_event = {
                 "status": "error",

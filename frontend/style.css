@@ -14,8 +14,8 @@
     --text-secondary: #9ca3af;
     --text-muted: #6b7280;
     
-    --font-heading: 'Outfit', sans-serif;
-    --font-body: 'Inter', sans-serif;
+    --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     
     --glow-purple: 0 0 15px rgba(139, 92, 246, 0.3);
     --glow-cyan: 0 0 15px rgba(6, 182, 212, 0.3);
