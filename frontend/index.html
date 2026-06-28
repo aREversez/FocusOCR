@@ -80,7 +80,14 @@
 
                 <!-- Keywords Configuration -->
                 <div class="form-group">
-                    <label>Keywords (Up to 3)</label>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+                        <label style="margin-bottom:0">Keywords (Up to 3)</label>
+                        <label class="regex-toggle-label">
+                            <input type="checkbox" id="use-regex">
+                            <span class="regex-toggle-slider">.*</span>
+                            <span class="label-text">Regex</span>
+                        </label>
+                    </div>
                     <div class="keywords-inputs">
                         <div class="keyword-item">
                             <span class="kw-badge">1</span>
@@ -103,6 +110,21 @@
                         <option value="any">Match ANY keyword (OR)</option>
                         <option value="all">Match ALL keywords (AND)</option>
                     </select>
+                </div>
+
+                <!-- Exclusion Keywords -->
+                <div class="form-group">
+                    <label>Exclusion Keywords (optional)</label>
+                    <div class="keywords-inputs">
+                        <div class="keyword-item">
+                            <span class="kw-badge kw-badge-exclude">E1</span>
+                            <input type="text" class="keyword-input" id="exclude-keyword-1" placeholder="Exclude keyword..." autocomplete="off">
+                        </div>
+                        <div class="keyword-item">
+                            <span class="kw-badge kw-badge-exclude">E2</span>
+                            <input type="text" class="keyword-input" id="exclude-keyword-2" placeholder="Exclude keyword..." autocomplete="off">
+                        </div>
+                    </div>
                 </div>
 
                 <div class="action-buttons">

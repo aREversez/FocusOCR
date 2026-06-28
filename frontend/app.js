@@ -17,6 +17,9 @@ const elKeyword1 = document.getElementById('keyword-1');
 const elKeyword2 = document.getElementById('keyword-2');
 const elKeyword3 = document.getElementById('keyword-3');
 const elMatchLogic = document.getElementById('match-logic');
+const elUseRegex = document.getElementById('use-regex');
+const elExcludeKeyword1 = document.getElementById('exclude-keyword-1');
+const elExcludeKeyword2 = document.getElementById('exclude-keyword-2');
 
 
 const btnBrowseTarget = document.getElementById('btn-browse-target');
@@ -254,6 +257,13 @@ function startScan() {
         elKeyword3.value.trim()
     ].filter(kw => kw !== '');
 
+    const excludeKeywords = [
+        elExcludeKeyword1.value.trim(),
+        elExcludeKeyword2.value.trim()
+    ].filter(kw => kw !== '');
+
+    const useRegex = elUseRegex.checked;
+
     if (!targetDir) {
         alert('Please enter or browse a target directory to scan.');
         return;
@@ -291,7 +301,9 @@ function startScan() {
     params.append('dest_dir', destDir);
     params.append('match_logic', matchLogic);
     params.append('recursive', recursive);
+    params.append('use_regex', useRegex);
     keywords.forEach(kw => params.append('keywords', kw));
+    excludeKeywords.forEach(kw => params.append('exclude_keywords', kw));
 
     const sseUrl = `/api/scan-stream?${params.toString()}`;
     
@@ -348,6 +360,8 @@ function startScan() {
                     keywords: keywords,
                     match_logic: elMatchLogic.value,
                     recursive: elRecursive.checked,
+                    use_regex: elUseRegex.checked,
+                    exclude_keywords: excludeKeywords,
                     total_files: scanStats.total,
                     matched_files: scanStats.matches,
                     matches: matchedFiles.map(m => JSON.parse(JSON.stringify(m)))
@@ -591,9 +605,12 @@ function loadScanRecord(record) {
     elDestDir.value = record.dest_dir || '';
     elMatchLogic.value = record.match_logic || 'any';
     elRecursive.checked = !!record.recursive;
+    elUseRegex.checked = !!record.use_regex;
     elKeyword1.value = record.keywords[0] || '';
     elKeyword2.value = record.keywords[1] || '';
     elKeyword3.value = record.keywords[2] || '';
+    elExcludeKeyword1.value = (record.exclude_keywords && record.exclude_keywords[0]) || '';
+    elExcludeKeyword2.value = (record.exclude_keywords && record.exclude_keywords[1]) || '';
 
     // Populate gallery
     clearGallery();

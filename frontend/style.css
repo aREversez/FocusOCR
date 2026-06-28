@@ -315,6 +315,59 @@ select:focus {
     padding-left: 2.5rem !important;
 }
 
+/* Exclusion keyword badge (red variant) */
+.kw-badge-exclude {
+    background: rgba(244, 63, 94, 0.15) !important;
+    color: #fb7185 !important;
+    border-color: rgba(244, 63, 94, 0.3) !important;
+}
+
+/* Regex toggle (pill button style) */
+.regex-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.regex-toggle-label input {
+    display: none;
+}
+
+.regex-toggle-slider {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 22px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-color);
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    transition: var(--transition-smooth);
+}
+
+.regex-toggle-label input:checked + .regex-toggle-slider {
+    background: rgba(139, 92, 246, 0.2);
+    border-color: var(--accent-purple);
+    color: var(--accent-purple);
+    box-shadow: 0 0 6px rgba(139, 92, 246, 0.2);
+}
+
+[data-theme="light"] .regex-toggle-slider {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .regex-toggle-label input:checked + .regex-toggle-slider {
+    background: rgba(139, 92, 246, 0.12);
+}
+
 .select-input {
     appearance: none;
     background-image: url("data:image/svg+xml;utf8,<svg fill='white' height='24' viewBox='0 0 24 24' width='24' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/><path d='M0 0h24v24H0z' fill='none'/></svg>");

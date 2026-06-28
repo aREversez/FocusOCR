@@ -95,7 +95,9 @@ def scan_stream(
     dest_dir: str,
     keywords: List[str] = Query([]),
     match_logic: str = "any",
-    recursive: bool = True
+    recursive: bool = True,
+    use_regex: bool = False,
+    exclude_keywords: List[str] = Query([])
 ):
     """
     Starts the OCR scan and streams real-time updates as Server-Sent Events (SSE).
@@ -103,17 +105,14 @@ def scan_stream(
     if match_logic not in ("any", "all"):
         raise HTTPException(status_code=400, detail="match_logic must be 'any' or 'all'")
 
-    # Clean and split keywords
-    clean_kws = []
-    for kw in keywords:
-        # If keywords are passed as a single comma-separated string, split them
-        if "," in kw:
-            clean_kws.extend([k.strip() for k in kw.split(",") if k.strip()])
-        elif kw.strip():
-            clean_kws.append(kw.strip())
+    # Clean keywords (frontend sends each as a separate param, no comma-splitting needed)
+    clean_kws = [kw.strip() for kw in keywords if kw.strip()]
 
     if not clean_kws:
         raise HTTPException(status_code=400, detail="At least one valid keyword must be specified")
+    
+    # Clean exclusion keywords
+    clean_ex_kws = [kw.strip() for kw in exclude_keywords if kw.strip()]
 
     target_path = Path(target_dir)
     if not target_path.exists() or not target_path.is_dir():
@@ -126,7 +125,9 @@ def scan_stream(
                 dest_dir=dest_dir,
                 keywords=clean_kws,
                 match_logic=match_logic,
-                recursive=recursive
+                recursive=recursive,
+                use_regex=use_regex,
+                exclude_keywords=clean_ex_kws if clean_ex_kws else None
             )
             for event in generator:
                 try:
