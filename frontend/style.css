@@ -868,6 +868,13 @@ select:focus {
     max-width: 100%;
 }
 
+#scan-history-list .history-chip {
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+}
+
 .history-chip:hover {
     background: rgba(139, 92, 246, 0.1);
     border-color: rgba(139, 92, 246, 0.3);
@@ -879,6 +886,27 @@ select:focus {
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 280px;
+}
+
+.history-chip-content {
+    min-width: 0;
+    flex: 1;
+}
+
+.history-chip-kw {
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.8rem;
+    line-height: 1.3;
+}
+
+.history-chip-meta {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-top: 1px;
 }
 
 .history-chip-delete {

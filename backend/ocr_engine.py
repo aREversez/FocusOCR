@@ -219,15 +219,27 @@ class OCREngine:
             
             copied_paths = []
             if is_match:
-                for kw in matched_kws:
-                    safe_kw_folder = sanitize_folder_name(kw)
-                    subfolder = dest_path / safe_kw_folder
+                if match_logic == "all":
+                    # AND mode: single folder named "A & B"
+                    combined_name = " & ".join(matched_kws)
+                    safe_folder = sanitize_folder_name(combined_name)
+                    subfolder = dest_path / safe_folder
                     try:
                         copied_file = self.copy_file_resolve_conflict(img_path, subfolder)
                         copied_paths.append(str(copied_file))
                     except Exception as e:
                         print(f"Error copying file {img_path} to {subfolder}: {e}")
-                
+                else:
+                    # ANY mode: per-keyword folders
+                    for kw in matched_kws:
+                        safe_kw_folder = sanitize_folder_name(kw)
+                        subfolder = dest_path / safe_kw_folder
+                        try:
+                            copied_file = self.copy_file_resolve_conflict(img_path, subfolder)
+                            copied_paths.append(str(copied_file))
+                        except Exception as e:
+                            print(f"Error copying file {img_path} to {subfolder}: {e}")
+
                 if copied_paths:
                     matched_files += 1
             

@@ -12,6 +12,7 @@ This is ideal for anyone who accumulates a large volume of screenshots, referenc
 - **Accurate Chinese & English OCR**: Powered by **RapidOCR** (using ONNX Runtime and the state-of-the-art PaddleOCR PP-OCRv4 model weights).
 - **Keyword Subdirectory Auto-Sorting**: Automatically creates folders inside your destination directory named after the matching keywords (e.g., `dest_folder/Invoice/`, `dest_folder/Report/`) and places matching copies inside.
 - **Folder Selection History**: Keeps track of recently selected directories for both Target and Destination fields via `localStorage`. Items can be deleted from history at any time.
+- **Scan History**: Automatically saves the last 10 scan results (keywords, match stats, file paths, OCR snippets) to `localStorage`. Click any record to restore the form fields and gallery — even after clearing results or closing the browser.
 - **Multi-Keyword Matching**: Supports filtering using up to 3 keywords with logical operator controls (Match **ANY** vs. Match **ALL**).
 - **Real Scan Cancellation**: The Stop button actually interrupts the scan server-side — no wasted OCR work after cancellation.
 - **Modern User Interface**: A responsive glassmorphic dashboard featuring statistical cards, real-time progress bars, and a clean result card gallery.
@@ -122,7 +123,11 @@ Settings are stored in `~/.focusocr/config.json` and are created with defaults o
 5. **View Results**:
    - Matches will dynamically load in the gallery card grid.
    - Click **Preview** or tap the thumbnail to open the Lightbox view and check the image in full size along with the matching OCR text snippets.
-   - Click **Copy Path** to quickly copy the local absolute path of the original image.
+    - Click **Copy Path** to quickly copy the local absolute path of the original image.
+6. **Review Past Scans**:
+    - The **Scan History** panel in the sidebar lists your last 10 scans with keywords, date, and match count.
+    - Click any entry to restore the form fields and gallery for that scan.
+    - Hover and click the **×** button to delete individual records.
 
 ---
 

@@ -65,9 +65,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Escape') closeLightbox();
     });
 
-    // Render initial folder histories
+    // Render initial folder and scan histories
     renderHistory('target');
     renderHistory('dest');
+    renderScanRecords();
 });
 
 
@@ -122,7 +123,7 @@ function updateStatsUI() {
 
 // Helper to escape HTML characters
 function escapeHTML(str) {
-    return str.replace(/[&<>'"]/g, 
+    return String(str).replace(/[&<>'"]/g, 
         tag => ({
             '&': '&amp;',
             '<': '&lt;',
@@ -315,6 +316,28 @@ function startScan() {
             elProgressStatus.textContent = 'Completed!';
             elProgressCurrent.textContent = data.message;
             endScan('Ready', 'green');
+            // Save to scan history (inline to avoid any indirection bugs)
+            try {
+                const rec = {
+                    id: Date.now(),
+                    timestamp: Date.now(),
+                    target_dir: elTargetDir.value.trim() || '',
+                    dest_dir: elDestDir.value.trim() || '',
+                    keywords: keywords,
+                    match_logic: elMatchLogic.value,
+                    recursive: elRecursive.checked,
+                    total_files: scanStats.total,
+                    matched_files: scanStats.matches,
+                    matches: matchedFiles.map(m => JSON.parse(JSON.stringify(m)))
+                };
+                let prev = JSON.parse(localStorage.getItem('focusocr_v1_scan_history') || '[]');
+                prev.unshift(rec);
+                if (prev.length > 10) prev = prev.slice(0, 10);
+                localStorage.setItem('focusocr_v1_scan_history', JSON.stringify(prev));
+                renderScanRecords();
+            } catch (e) {
+                console.error('Failed to save scan history:', e);
+            }
         } 
         else if (data.status === 'error') {
             elProgressStatus.textContent = 'Error occurred!';
@@ -470,5 +493,103 @@ function renderHistory(type) {
 
         container.appendChild(chip);
     });
+}
+
+// Scan History (localStorage-based, no server dependency)
+const elScanHistoryList = document.getElementById('scan-history-list');
+const SCAN_HISTORY_KEY = 'focusocr_v1_scan_history';
+const MAX_SCAN_RECORDS = 10;
+
+function loadScanRecords() {
+    try {
+        const stored = localStorage.getItem(SCAN_HISTORY_KEY);
+        return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveScanRecords(records) {
+    try {
+        localStorage.setItem(SCAN_HISTORY_KEY, JSON.stringify(records));
+    } catch (e) {}
+}
+
+function renderScanRecords() {
+    if (!elScanHistoryList) return;
+    const records = loadScanRecords();
+    elScanHistoryList.innerHTML = '';
+
+    if (records.length === 0) {
+        elScanHistoryList.innerHTML = '<span class="history-empty">No past scans yet.</span>';
+        return;
+    }
+
+    records.forEach(rec => {
+        const chip = document.createElement('div');
+        chip.className = 'history-chip';
+
+        const date = new Date(rec.timestamp);
+        const dateStr = date.toLocaleString(undefined, {
+            month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+        const kwText = rec.keywords.join(', ') || '(no keywords)';
+
+        chip.innerHTML = `
+            <div class="history-chip-content">
+                <div class="history-chip-kw" title="${escapeHTML(kwText)}">${escapeHTML(kwText)}</div>
+                <div class="history-chip-meta">${escapeHTML(dateStr)} — ${escapeHTML(rec.matched_files)}/${escapeHTML(rec.total_files)}</div>
+            </div>
+            <span class="history-chip-delete" title="Delete record">&times;</span>
+        `;
+
+        chip.addEventListener('click', (e) => {
+            if (e.target.classList.contains('history-chip-delete')) return;
+            loadScanRecord(rec);
+        });
+        chip.querySelector('.history-chip-delete').addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteScanRecord(rec.id);
+        });
+        elScanHistoryList.appendChild(chip);
+    });
+}
+
+function deleteScanRecord(id) {
+    let records = loadScanRecords();
+    records = records.filter(r => r.id !== id);
+    saveScanRecords(records);
+    renderScanRecords();
+}
+
+function loadScanRecord(record) {
+    // Restore form fields
+    elTargetDir.value = record.target_dir || '';
+    elDestDir.value = record.dest_dir || '';
+    elMatchLogic.value = record.match_logic || 'any';
+    elRecursive.checked = !!record.recursive;
+    elKeyword1.value = record.keywords[0] || '';
+    elKeyword2.value = record.keywords[1] || '';
+    elKeyword3.value = record.keywords[2] || '';
+
+    // Populate gallery
+    clearGallery();
+    const keywords = record.keywords || [];
+    scanStats.total = record.total_files || 0;
+    scanStats.processed = record.total_files || 0;
+    scanStats.matches = record.matched_files || 0;
+    updateStatsUI();
+
+    if (record.matches && record.matches.length > 0) {
+        record.matches.forEach(match => {
+            matchedFiles.push(match);
+            addMatchToGallery(match, keywords);
+        });
+        elGalleryCount.textContent = matchedFiles.length;
+        elGalleryCount.classList.remove('hidden');
+    }
+
+    updateSystemStatus('Loaded from history', 'green');
 }
 
