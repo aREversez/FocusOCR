@@ -146,12 +146,21 @@ body {
 /* Dashboard Grid Layout */
 .dashboard-grid {
     display: grid;
-    grid-template-columns: 420px 1fr;
-    gap: 2rem;
+    grid-template-columns: 380px 1fr 280px;
+    gap: 1.5rem;
     align-items: start;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1300px) {
+    .dashboard-grid {
+        grid-template-columns: 380px 1fr;
+    }
+    .sidebar-right {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 768px) {
     .dashboard-grid {
         grid-template-columns: 1fr;
     }
@@ -1069,6 +1078,27 @@ select:focus {
     border: 1px solid rgba(255,255,255,0.04);
     max-height: 120px;
     overflow-y: auto;
+}
+
+/* Right sidebar */
+.sidebar-right {
+    position: sticky;
+    top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.sidebar-right .panel-title {
+    margin-bottom: 0.75rem;
+}
+.sidebar-right .separator {
+    margin: 0.75rem 0;
+}
+.sidebar-right #scan-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-height: 0;
 }
 
 /* Directory History List */
