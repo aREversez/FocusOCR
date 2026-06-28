@@ -1,13 +1,17 @@
 import os
+import json
+import hashlib
 import shutil
 import time
 import re
 import threading
-from typing import List, Generator, Dict, Any, Tuple
+from typing import List, Generator, Dict, Any, Tuple, Optional
 from pathlib import Path
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
-from backend.config import load_settings
+from backend.config import load_settings, OCR_CACHE_DIR
+
+OCR_ENGINE_VERSION = 1  # Bump this if RapidOCR version changes or extraction logic changes
 
 # Supported image file extensions
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.bmp', '.webp', '.tiff'}
@@ -48,39 +52,104 @@ class OCREngine:
                 images.append(p)
         return sorted(images, key=lambda x: x.stat().st_mtime, reverse=True)
 
-    def extract_text_and_boxes(self, img_path: Path) -> Tuple[str, List[Dict[str, Any]]]:
-        """
-        Runs OCR on the image.
-        Returns:
-            - Full text joined by newlines.
-            - A list of dicts containing text, confidence, and bounding box coordinates.
-        """
+    def _cache_key(self, img_path: Path) -> str:
+        st = img_path.stat()
+        raw = f"{img_path.resolve()}_{st.st_mtime_ns}_{st.st_size}"
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    def _cache_path(self, cache_key: str) -> Path:
+        return OCR_CACHE_DIR / f"{cache_key}.json"
+
+    def _load_cache(self, img_path: Path) -> Optional[Tuple[str, List[Dict[str, Any]]]]:
+        settings = load_settings()
+        if not settings.enable_ocr_cache:
+            return None
+        key = self._cache_key(img_path)
+        cache_file = self._cache_path(key)
+        if not cache_file.exists():
+            return None
         try:
-            # RapidOCR handles path strings directly
-            result, elapse = self._ocr(str(img_path))
-            if not result:
-                return "", []
-            
-            full_text_lines = []
-            detailed_results = []
-            
-            for item in result:
-                box, text, confidence = item
-                # box is standard: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
-                full_text_lines.append(text)
-                
-                # Format coordinates for easy use in frontend if needed
-                detailed_results.append({
+            data = json.loads(cache_file.read_text(encoding="utf-8"))
+            if data.get("engine_version") != OCR_ENGINE_VERSION:
+                return None
+            return data["text"], data["detailed_results"]
+        except Exception:
+            return None
+
+    def _save_cache(self, img_path: Path, text: str, detailed_results: List[Dict[str, Any]]) -> None:
+        settings = load_settings()
+        if not settings.enable_ocr_cache:
+            return
+        key = self._cache_key(img_path)
+        OCR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_file = self._cache_path(key)
+        try:
+            cache_file.write_text(
+                json.dumps({
+                    "engine_version": OCR_ENGINE_VERSION,
+                    "path": str(img_path.resolve()),
                     "text": text,
-                    "confidence": float(confidence),
-                    "box": box
-                })
-                
-            return "\n".join(full_text_lines), detailed_results
+                    "detailed_results": detailed_results
+                }, ensure_ascii=False),
+                encoding="utf-8"
+            )
         except Exception as e:
-            # Log error or print, return empty
-            print(f"Error performing OCR on {img_path}: {e}")
-            return "", []
+            print(f"Failed to write OCR cache for {img_path}: {e}")
+
+    def clear_cache(self) -> int:
+        """Deletes all cached OCR results. Returns the number of files removed."""
+        if not OCR_CACHE_DIR.exists():
+            return 0
+        count = 0
+        for f in OCR_CACHE_DIR.iterdir():
+            if f.suffix == ".json":
+                f.unlink()
+                count += 1
+        return count
+
+    def extract_text_and_boxes(self, img_path: Path, confidence_threshold: float = 0.0) -> Tuple[str, List[Dict[str, Any]], bool]:
+        """
+        Runs OCR on the image (or returns cached result if available).
+        Cache always stores the full unfiltered result; filtering is applied
+        on the returned data so re-scanning with a different threshold reuses cache.
+        Returns:
+            - Full text joined by newlines (filtered by threshold).
+            - A list of dicts containing text, confidence, and bounding box coordinates.
+            - Boolean: True if result came from cache, False if OCR was run fresh.
+        """
+        # Check cache first
+        cached = self._load_cache(img_path)
+        if cached is not None:
+            all_text, all_details = cached
+        else:
+            try:
+                result, elapse = self._ocr(str(img_path))
+                if not result:
+                    return "", [], False
+                all_text_lines = []
+                all_details = []
+                for item in result:
+                    box, text, confidence = item
+                    conf = float(confidence)
+                    all_text_lines.append(text)
+                    all_details.append({
+                        "text": text,
+                        "confidence": conf,
+                        "box": box
+                    })
+                all_text = "\n".join(all_text_lines)
+                # Save full unfiltered result to cache
+                self._save_cache(img_path, all_text, all_details)
+            except Exception as e:
+                print(f"Error performing OCR on {img_path}: {e}")
+                return "", [], False
+
+        # Apply confidence filter on top of full results (works for both cache and fresh)
+        if confidence_threshold > 0.0:
+            filtered = [d for d in all_details if d["confidence"] >= confidence_threshold]
+            filtered_text = "\n".join(d["text"] for d in filtered)
+            return filtered_text, filtered, cached is not None
+        return all_text, all_details, cached is not None
 
     def match_keywords(
         self,
@@ -197,7 +266,8 @@ class OCREngine:
         match_logic: str = "any",
         recursive: bool = True,
         use_regex: bool = False,
-        exclude_keywords: List[str] = None
+        exclude_keywords: List[str] = None,
+        confidence_threshold: float = 0.0
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Generator yielding real-time scanning progress updates.
@@ -237,12 +307,14 @@ class OCREngine:
 
         processed_files = 0
         matched_files = 0
+        cached_files = 0
         
         yield {
             "status": "starting",
             "total_files": total_files,
             "processed_files": 0,
-            "matched_files": 0
+            "matched_files": 0,
+            "cached_files": 0
         }
 
         for img_path in images:
@@ -252,14 +324,17 @@ class OCREngine:
                     "total_files": total_files,
                     "processed_files": processed_files,
                     "matched_files": matched_files,
+                    "cached_files": cached_files,
                     "message": f"Scan cancelled by user after processing {processed_files} of {total_files} images."
                 }
                 return
 
             processed_files += 1
             
-            # Perform OCR
-            full_text, detailed_results = self.extract_text_and_boxes(img_path)
+            # Perform OCR (or load from cache)
+            full_text, detailed_results, from_cache = self.extract_text_and_boxes(img_path, confidence_threshold=confidence_threshold)
+            if from_cache:
+                cached_files += 1
             
             # Check match
             is_match, snippets, matched_kws = self.match_keywords(
@@ -301,6 +376,8 @@ class OCREngine:
                 "total_files": total_files,
                 "processed_files": processed_files,
                 "matched_files": matched_files,
+                "cached_files": cached_files,
+                "from_cache": from_cache,
                 "current_file": str(img_path.relative_to(target_dir)),
                 "current_full_path": str(img_path),
                 "is_match": is_match,
@@ -319,5 +396,6 @@ class OCREngine:
             "total_files": total_files,
             "processed_files": processed_files,
             "matched_files": matched_files,
-            "message": f"Successfully completed. Processed {processed_files} images, found {matched_files} matches."
+            "cached_files": cached_files,
+            "message": f"Successfully completed. Processed {processed_files} images ({cached_files} from cache), found {matched_files} matches."
         }

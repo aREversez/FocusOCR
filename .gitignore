@@ -26,4 +26,7 @@ Thumbs.db
 .env
 
 # files
-assets/
+test_data/
+
+# Project log (not tracked)
+project_evolving.md

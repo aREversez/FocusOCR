@@ -4,7 +4,8 @@ let matchedFiles = [];
 let scanStats = {
     total: 0,
     processed: 0,
-    matches: 0
+    matches: 0,
+    cached: 0
 };
 
 // DOM Elements
@@ -20,6 +21,9 @@ const elMatchLogic = document.getElementById('match-logic');
 const elUseRegex = document.getElementById('use-regex');
 const elExcludeKeyword1 = document.getElementById('exclude-keyword-1');
 const elExcludeKeyword2 = document.getElementById('exclude-keyword-2');
+const elConfidenceThreshold = document.getElementById('confidence-threshold');
+const elConfidenceValue = document.getElementById('confidence-value');
+const elCacheEnabled = document.getElementById('cache-enabled');
 
 
 const btnBrowseTarget = document.getElementById('btn-browse-target');
@@ -27,6 +31,8 @@ const btnBrowseDest = document.getElementById('btn-browse-dest');
 const btnStartScan = document.getElementById('btn-start-scan');
 const btnStopScan = document.getElementById('btn-stop-scan');
 const btnClearResults = document.getElementById('btn-clear-results');
+const btnClearCache = document.getElementById('btn-clear-cache');
+const btnClearThumbCache = document.getElementById('btn-clear-thumb-cache');
 const btnExport = document.getElementById('btn-export');
 const elExportMenu = document.getElementById('export-menu');
 
@@ -37,6 +43,7 @@ const elSystemStatus = document.getElementById('system-status');
 const elStatsTotal = document.getElementById('stat-total');
 const elStatsProcessed = document.getElementById('stat-processed');
 const elStatsMatches = document.getElementById('stat-matches');
+const elStatsCached = document.getElementById('stat-cached');
 
 const elProgressPanel = document.getElementById('progress-panel');
 const elProgressStatus = document.getElementById('progress-status-text');
@@ -47,6 +54,8 @@ const elProgressCurrent = document.getElementById('progress-current-file');
 const elEmptyState = document.getElementById('empty-state');
 const elResultsGrid = document.getElementById('results-grid');
 const elGalleryCount = document.getElementById('gallery-count');
+const elFilterInput = document.getElementById('filter-input');
+const elResultsFilter = document.getElementById('results-filter');
 
 // Lightbox Elements
 const elLightbox = document.getElementById('lightbox');
@@ -111,14 +120,34 @@ document.addEventListener('DOMContentLoaded', () => {
     btnStartScan.addEventListener('click', startScan);
     btnStopScan.addEventListener('click', stopScan);
     btnClearResults.addEventListener('click', clearGallery);
+    btnClearCache.addEventListener('click', clearOcrCache);
+    btnClearThumbCache.addEventListener('click', clearThumbCache);
     
     // Lightbox close events
     elLightboxClose.addEventListener('click', closeLightbox);
     document.querySelector('.lightbox-overlay').addEventListener('click', closeLightbox);
     
-    // Close lightbox on Escape key
+    // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeLightbox();
+        if (e.key === 'Escape') {
+            if (!elLightbox.classList.contains('hidden')) {
+                closeLightbox();
+                return;
+            }
+            elExportMenu.classList.add('hidden');
+        }
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            if (!btnStartScan.classList.contains('hidden')) {
+                startScan();
+            }
+        }
+        if (e.key === 'e' && e.ctrlKey && e.shiftKey) {
+            e.preventDefault();
+            if (!btnExport.disabled) {
+                elExportMenu.classList.toggle('hidden');
+            }
+        }
     });
 
     // Export dropdown
@@ -135,6 +164,26 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!e.target.closest('.export-dropdown')) {
             elExportMenu.classList.add('hidden');
         }
+    });
+
+    // Confidence slider live value display
+    elConfidenceThreshold.addEventListener('input', () => {
+        elConfidenceValue.textContent = parseFloat(elConfidenceThreshold.value).toFixed(2);
+    });
+
+    // Results filter
+    elFilterInput.addEventListener('input', filterResults);
+
+    // Load settings from backend
+    fetch('/api/settings').then(r => r.json()).then(s => {
+        elCacheEnabled.checked = s.enable_ocr_cache !== false;
+    }).catch(() => {});
+    elCacheEnabled.addEventListener('change', () => {
+        fetch('/api/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({enable_ocr_cache: elCacheEnabled.checked})
+        }).catch(() => {});
     });
 
     // Render initial folder and scan histories
@@ -182,19 +231,64 @@ function clearGallery() {
     matchedFiles = [];
     elResultsGrid.innerHTML = '';
     elResultsGrid.classList.add('hidden');
+    elResultsFilter.classList.add('hidden');
+    elFilterInput.value = '';
     elEmptyState.classList.remove('hidden');
     elGalleryCount.classList.add('hidden');
     elGalleryCount.textContent = '0';
     
     // Reset stats
-    scanStats = { total: 0, processed: 0, matches: 0 };
+    scanStats = { total: 0, processed: 0, matches: 0, cached: 0 };
     updateStatsUI();
     updateExportButton();
+}
+
+async function clearOcrCache() {
+    if (!confirm('Clear all cached OCR results? Images will be re-scanned on the next run.')) return;
+    try {
+        const resp = await fetch('/api/clear-ocr-cache');
+        const data = await resp.json();
+        if (data.status === 'ok') {
+            scanStats.cached = 0;
+            elStatsCached.textContent = '0';
+            updateSystemStatus(`OCR cache cleared (${data.removed} files)`, 'green');
+            setTimeout(() => updateSystemStatus('Ready', 'green'), 3000);
+        }
+    } catch (e) {
+        alert('Failed to clear OCR cache: ' + e.message);
+    }
+}
+
+function filterResults() {
+    const query = elFilterInput.value.trim().toLowerCase();
+    const cards = elResultsGrid.querySelectorAll('.result-card');
+    let visible = 0;
+    cards.forEach(card => {
+        const match = !query || (card.dataset.search || '').includes(query);
+        card.style.display = match ? '' : 'none';
+        if (match) visible++;
+    });
+    elGalleryCount.textContent = visible;
+}
+
+async function clearThumbCache() {
+    if (!confirm('Clear all cached thumbnails? They will be re-created when viewing results.')) return;
+    try {
+        const resp = await fetch('/api/clear-thumb-cache');
+        const data = await resp.json();
+        if (data.status === 'ok') {
+            updateSystemStatus(`Thumb cache cleared (${data.removed} files)`, 'green');
+            setTimeout(() => updateSystemStatus('Ready', 'green'), 3000);
+        }
+    } catch (e) {
+        alert('Failed to clear thumbnail cache: ' + e.message);
+    }
 }
 
 function updateStatsUI() {
     elStatsTotal.textContent = scanStats.total;
     elStatsProcessed.textContent = scanStats.processed;
+    elStatsCached.textContent = scanStats.cached;
     elStatsMatches.textContent = scanStats.matches;
 }
 
@@ -235,15 +329,18 @@ function highlightText(text, keywords) {
 }
 
 // Add a matched image to the gallery
-function addMatchToGallery(match, keywords) {
+function addMatchToGallery(match, keywords, fromCache) {
     elEmptyState.classList.add('hidden');
     elResultsGrid.classList.remove('hidden');
+    elResultsFilter.classList.remove('hidden');
     
     const thumbSrc = `/api/thumbnail?path=${encodeURIComponent(match.original_path)}`;
     const encodedPath = encodeURIComponent(match.original_path);
     
+    const searchText = [match.filename, match.original_path, ...(match.snippets || [])].join(' ').toLowerCase();
     const card = document.createElement('div');
     card.className = 'result-card';
+    card.dataset.search = searchText;
     
     // Build highlights for snippets
     const snippetsHTML = match.snippets.map(snippet => 
@@ -261,7 +358,10 @@ function addMatchToGallery(match, keywords) {
         </div>
         <div class="card-content">
             <div class="card-info">
-                <div class="card-title" title="${escapeHTML(match.filename)}">${escapeHTML(match.filename)}</div>
+                <div style="display:flex;align-items:center;gap:0.3rem">
+                    <div class="card-title" title="${escapeHTML(match.filename)}">${escapeHTML(match.filename)}</div>
+                    ${fromCache ? '<span class="card-cache-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="2"/></svg>Cache</span>' : ''}
+                </div>
                 <div class="card-path" title="${escapeHTML(match.original_path)}">${escapeHTML(match.original_path)}</div>
             </div>
             ${snippetsHTML ? `<div class="card-snippets">${snippetsHTML}</div>` : ''}
@@ -365,6 +465,7 @@ function startScan() {
     params.append('match_logic', matchLogic);
     params.append('recursive', recursive);
     params.append('use_regex', useRegex);
+    params.append('confidence_threshold', parseFloat(elConfidenceThreshold.value) || 0);
     keywords.forEach(kw => params.append('keywords', kw));
     excludeKeywords.forEach(kw => params.append('exclude_keywords', kw));
 
@@ -393,10 +494,14 @@ function startScan() {
             elProgressPercent.textContent = `${percent}%`;
             elProgressCurrent.textContent = data.current_file;
             
+            // Track cache stats
+            scanStats.cached = data.cached_files || 0;
+            elStatsCached.textContent = scanStats.cached;
+            
             // Add match to UI
             if (data.is_match && data.match_details) {
                 matchedFiles.push(data.match_details);
-                addMatchToGallery(data.match_details, keywords);
+                addMatchToGallery(data.match_details, keywords, data.from_cache);
                 updateExportButton();
                 
                 elGalleryCount.textContent = matchedFiles.length;
@@ -409,6 +514,8 @@ function startScan() {
             endScan('Ready', 'orange');
         }
         else if (data.status === 'complete') {
+            scanStats.cached = data.cached_files || 0;
+            elStatsCached.textContent = scanStats.cached;
             elProgressBarFill.style.width = '100%';
             elProgressPercent.textContent = '100%';
             elProgressStatus.textContent = 'Completed!';
@@ -425,9 +532,11 @@ function startScan() {
                     match_logic: elMatchLogic.value,
                     recursive: elRecursive.checked,
                     use_regex: elUseRegex.checked,
+                    confidence_threshold: parseFloat(elConfidenceThreshold.value) || 0,
                     exclude_keywords: excludeKeywords,
                     total_files: scanStats.total,
                     matched_files: scanStats.matches,
+                    cached_files: scanStats.cached,
                     matches: matchedFiles.map(m => JSON.parse(JSON.stringify(m)))
                 };
                 let prev = JSON.parse(localStorage.getItem('focusocr_v1_scan_history') || '[]');
@@ -670,6 +779,8 @@ function loadScanRecord(record) {
     elMatchLogic.value = record.match_logic || 'any';
     elRecursive.checked = !!record.recursive;
     elUseRegex.checked = !!record.use_regex;
+    elConfidenceThreshold.value = record.confidence_threshold || 0;
+    elConfidenceValue.textContent = parseFloat(elConfidenceThreshold.value).toFixed(2);
     elKeyword1.value = record.keywords[0] || '';
     elKeyword2.value = record.keywords[1] || '';
     elKeyword3.value = record.keywords[2] || '';
@@ -682,6 +793,7 @@ function loadScanRecord(record) {
     scanStats.total = record.total_files || 0;
     scanStats.processed = record.total_files || 0;
     scanStats.matches = record.matched_files || 0;
+    scanStats.cached = record.cached_files || 0;
     updateStatsUI();
 
     if (record.matches && record.matches.length > 0) {

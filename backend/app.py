@@ -21,6 +21,7 @@ if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
 
 from .folder_picker import choose_directory
 from .ocr_engine import OCREngine, IMAGE_EXTENSIONS
+from .config import load_settings, save_settings, Settings
 
 
 def _silence_transport_reset(loop, context):
@@ -139,6 +140,57 @@ def get_thumbnail(path: str):
 
     return FileResponse(str(cache_file), media_type='image/webp')
 
+@app.get("/api/clear-ocr-cache")
+def clear_ocr_cache():
+    """Deletes all cached OCR results."""
+    try:
+        removed = ocr_engine.clear_cache()
+        return {"status": "ok", "removed": removed}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/clear-thumb-cache")
+def clear_thumb_cache():
+    """Deletes all cached thumbnail images."""
+    try:
+        removed = 0
+        if THUMB_CACHE_DIR.exists():
+            for f in THUMB_CACHE_DIR.iterdir():
+                if f.is_file():
+                    f.unlink()
+                    removed += 1
+        return {"status": "ok", "removed": removed}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/cache-stats")
+def cache_stats():
+    """Returns the number of cached OCR result files."""
+    from backend.config import OCR_CACHE_DIR
+    count = 0
+    if OCR_CACHE_DIR.exists():
+        count = len(list(OCR_CACHE_DIR.glob("*.json")))
+    return {"cached_files": count}
+
+@app.get("/api/settings")
+def get_settings():
+    """Returns the current application settings."""
+    from dataclasses import asdict
+    settings = load_settings()
+    return asdict(settings)
+
+@app.post("/api/settings")
+def update_settings(data: dict):
+    """Updates application settings (partial update allowed)."""
+    current = load_settings()
+    allowed = {f.name for f in __import__('dataclasses').fields(current)}
+    for key, value in data.items():
+        if key in allowed:
+            setattr(current, key, value)
+    save_settings(current)
+    from dataclasses import asdict
+    return {"status": "ok", "settings": asdict(current)}
+
 @app.get("/api/stop-scan")
 def stop_scan():
     """Cancels an in-progress OCR scan."""
@@ -153,7 +205,8 @@ def scan_stream(
     match_logic: str = "any",
     recursive: bool = True,
     use_regex: bool = False,
-    exclude_keywords: List[str] = Query([])
+    exclude_keywords: List[str] = Query([]),
+    confidence_threshold: float = 0.0
 ):
     """
     Starts the OCR scan and streams real-time updates as Server-Sent Events (SSE).
@@ -183,7 +236,8 @@ def scan_stream(
                 match_logic=match_logic,
                 recursive=recursive,
                 use_regex=use_regex,
-                exclude_keywords=clean_ex_kws if clean_ex_kws else None
+                exclude_keywords=clean_ex_kws if clean_ex_kws else None,
+                confidence_threshold=confidence_threshold
             )
             for event in generator:
                 try:

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 DEFAULT_CONFIG_PATH = Path.home() / ".focusocr" / "config.json"
+OCR_CACHE_DIR = Path.home() / ".focusocr" / "ocr_cache"
 
 
 @dataclass
@@ -15,6 +16,7 @@ class Settings:
     ocr_confidence_threshold: float = 0.0
     max_snippets_per_match: int = 3
     max_history_per_dir: int = 5
+    enable_ocr_cache: bool = True
 
 
 def _default_config_dir() -> Path:
