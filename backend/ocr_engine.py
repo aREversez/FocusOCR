@@ -107,48 +107,49 @@ class OCREngine:
                 count += 1
         return count
 
-    def extract_text_and_boxes(self, img_path: Path) -> Tuple[str, List[Dict[str, Any]], bool]:
+    def extract_text_and_boxes(self, img_path: Path, confidence_threshold: float = 0.0) -> Tuple[str, List[Dict[str, Any]], bool]:
         """
         Runs OCR on the image (or returns cached result if available).
+        Cache always stores the full unfiltered result; filtering is applied
+        on the returned data so re-scanning with a different threshold reuses cache.
         Returns:
-            - Full text joined by newlines.
+            - Full text joined by newlines (filtered by threshold).
             - A list of dicts containing text, confidence, and bounding box coordinates.
             - Boolean: True if result came from cache, False if OCR was run fresh.
         """
         # Check cache first
         cached = self._load_cache(img_path)
         if cached is not None:
-            return cached[0], cached[1], True
+            all_text, all_details = cached
+        else:
+            try:
+                result, elapse = self._ocr(str(img_path))
+                if not result:
+                    return "", [], False
+                all_text_lines = []
+                all_details = []
+                for item in result:
+                    box, text, confidence = item
+                    conf = float(confidence)
+                    all_text_lines.append(text)
+                    all_details.append({
+                        "text": text,
+                        "confidence": conf,
+                        "box": box
+                    })
+                all_text = "\n".join(all_text_lines)
+                # Save full unfiltered result to cache
+                self._save_cache(img_path, all_text, all_details)
+            except Exception as e:
+                print(f"Error performing OCR on {img_path}: {e}")
+                return "", [], False
 
-        try:
-            # RapidOCR handles path strings directly
-            result, elapse = self._ocr(str(img_path))
-            if not result:
-                return "", []
-            
-            full_text_lines = []
-            detailed_results = []
-            
-            for item in result:
-                box, text, confidence = item
-                # box is standard: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
-                full_text_lines.append(text)
-                
-                # Format coordinates for easy use in frontend if needed
-                detailed_results.append({
-                    "text": text,
-                    "confidence": float(confidence),
-                    "box": box
-                })
-                
-            full_text = "\n".join(full_text_lines)
-            # Save to cache
-            self._save_cache(img_path, full_text, detailed_results)
-            return full_text, detailed_results, False
-        except Exception as e:
-            # Log error or print, return empty
-            print(f"Error performing OCR on {img_path}: {e}")
-            return "", [], False
+        # Apply confidence filter on top of full results (works for both cache and fresh)
+        if confidence_threshold > 0.0:
+            filtered = [d for d in all_details if d["confidence"] >= confidence_threshold]
+            filtered_text = "\n".join(d["text"] for d in filtered)
+            return filtered_text, filtered, cached is not None
+        return all_text, all_details, cached is not None
 
     def match_keywords(
         self,
@@ -265,7 +266,8 @@ class OCREngine:
         match_logic: str = "any",
         recursive: bool = True,
         use_regex: bool = False,
-        exclude_keywords: List[str] = None
+        exclude_keywords: List[str] = None,
+        confidence_threshold: float = 0.0
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Generator yielding real-time scanning progress updates.
@@ -330,7 +332,7 @@ class OCREngine:
             processed_files += 1
             
             # Perform OCR (or load from cache)
-            full_text, detailed_results, from_cache = self.extract_text_and_boxes(img_path)
+            full_text, detailed_results, from_cache = self.extract_text_and_boxes(img_path, confidence_threshold=confidence_threshold)
             if from_cache:
                 cached_files += 1
             

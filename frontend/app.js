@@ -21,6 +21,9 @@ const elMatchLogic = document.getElementById('match-logic');
 const elUseRegex = document.getElementById('use-regex');
 const elExcludeKeyword1 = document.getElementById('exclude-keyword-1');
 const elExcludeKeyword2 = document.getElementById('exclude-keyword-2');
+const elConfidenceThreshold = document.getElementById('confidence-threshold');
+const elConfidenceValue = document.getElementById('confidence-value');
+const elCacheEnabled = document.getElementById('cache-enabled');
 
 
 const btnBrowseTarget = document.getElementById('btn-browse-target');
@@ -51,6 +54,8 @@ const elProgressCurrent = document.getElementById('progress-current-file');
 const elEmptyState = document.getElementById('empty-state');
 const elResultsGrid = document.getElementById('results-grid');
 const elGalleryCount = document.getElementById('gallery-count');
+const elFilterInput = document.getElementById('filter-input');
+const elResultsFilter = document.getElementById('results-filter');
 
 // Lightbox Elements
 const elLightbox = document.getElementById('lightbox');
@@ -122,9 +127,27 @@ document.addEventListener('DOMContentLoaded', () => {
     elLightboxClose.addEventListener('click', closeLightbox);
     document.querySelector('.lightbox-overlay').addEventListener('click', closeLightbox);
     
-    // Close lightbox on Escape key
+    // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeLightbox();
+        if (e.key === 'Escape') {
+            if (!elLightbox.classList.contains('hidden')) {
+                closeLightbox();
+                return;
+            }
+            elExportMenu.classList.add('hidden');
+        }
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            if (!btnStartScan.classList.contains('hidden')) {
+                startScan();
+            }
+        }
+        if (e.key === 'e' && e.ctrlKey && e.shiftKey) {
+            e.preventDefault();
+            if (!btnExport.disabled) {
+                elExportMenu.classList.toggle('hidden');
+            }
+        }
     });
 
     // Export dropdown
@@ -141,6 +164,26 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!e.target.closest('.export-dropdown')) {
             elExportMenu.classList.add('hidden');
         }
+    });
+
+    // Confidence slider live value display
+    elConfidenceThreshold.addEventListener('input', () => {
+        elConfidenceValue.textContent = parseFloat(elConfidenceThreshold.value).toFixed(2);
+    });
+
+    // Results filter
+    elFilterInput.addEventListener('input', filterResults);
+
+    // Load settings from backend
+    fetch('/api/settings').then(r => r.json()).then(s => {
+        elCacheEnabled.checked = s.enable_ocr_cache !== false;
+    }).catch(() => {});
+    elCacheEnabled.addEventListener('change', () => {
+        fetch('/api/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({enable_ocr_cache: elCacheEnabled.checked})
+        }).catch(() => {});
     });
 
     // Render initial folder and scan histories
@@ -188,6 +231,8 @@ function clearGallery() {
     matchedFiles = [];
     elResultsGrid.innerHTML = '';
     elResultsGrid.classList.add('hidden');
+    elResultsFilter.classList.add('hidden');
+    elFilterInput.value = '';
     elEmptyState.classList.remove('hidden');
     elGalleryCount.classList.add('hidden');
     elGalleryCount.textContent = '0';
@@ -212,6 +257,18 @@ async function clearOcrCache() {
     } catch (e) {
         alert('Failed to clear OCR cache: ' + e.message);
     }
+}
+
+function filterResults() {
+    const query = elFilterInput.value.trim().toLowerCase();
+    const cards = elResultsGrid.querySelectorAll('.result-card');
+    let visible = 0;
+    cards.forEach(card => {
+        const match = !query || (card.dataset.search || '').includes(query);
+        card.style.display = match ? '' : 'none';
+        if (match) visible++;
+    });
+    elGalleryCount.textContent = visible;
 }
 
 async function clearThumbCache() {
@@ -275,12 +332,15 @@ function highlightText(text, keywords) {
 function addMatchToGallery(match, keywords, fromCache) {
     elEmptyState.classList.add('hidden');
     elResultsGrid.classList.remove('hidden');
+    elResultsFilter.classList.remove('hidden');
     
     const thumbSrc = `/api/thumbnail?path=${encodeURIComponent(match.original_path)}`;
     const encodedPath = encodeURIComponent(match.original_path);
     
+    const searchText = [match.filename, match.original_path, ...(match.snippets || [])].join(' ').toLowerCase();
     const card = document.createElement('div');
     card.className = 'result-card';
+    card.dataset.search = searchText;
     
     // Build highlights for snippets
     const snippetsHTML = match.snippets.map(snippet => 
@@ -405,6 +465,7 @@ function startScan() {
     params.append('match_logic', matchLogic);
     params.append('recursive', recursive);
     params.append('use_regex', useRegex);
+    params.append('confidence_threshold', parseFloat(elConfidenceThreshold.value) || 0);
     keywords.forEach(kw => params.append('keywords', kw));
     excludeKeywords.forEach(kw => params.append('exclude_keywords', kw));
 
@@ -471,6 +532,7 @@ function startScan() {
                     match_logic: elMatchLogic.value,
                     recursive: elRecursive.checked,
                     use_regex: elUseRegex.checked,
+                    confidence_threshold: parseFloat(elConfidenceThreshold.value) || 0,
                     exclude_keywords: excludeKeywords,
                     total_files: scanStats.total,
                     matched_files: scanStats.matches,
@@ -717,6 +779,8 @@ function loadScanRecord(record) {
     elMatchLogic.value = record.match_logic || 'any';
     elRecursive.checked = !!record.recursive;
     elUseRegex.checked = !!record.use_regex;
+    elConfidenceThreshold.value = record.confidence_threshold || 0;
+    elConfidenceValue.textContent = parseFloat(elConfidenceThreshold.value).toFixed(2);
     elKeyword1.value = record.keywords[0] || '';
     elKeyword2.value = record.keywords[1] || '';
     elKeyword3.value = record.keywords[2] || '';

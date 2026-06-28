@@ -76,6 +76,14 @@
                     </label>
                 </div>
 
+                <div class="form-group toggle-group">
+                    <label class="switch-label">
+                        <input type="checkbox" id="cache-enabled" checked>
+                        <span class="switch-slider"></span>
+                        <span class="label-text">Enable OCR cache (skip re-scan of unchanged files)</span>
+                    </label>
+                </div>
+
                 <hr class="separator">
 
                 <!-- Keywords Configuration -->
@@ -110,6 +118,18 @@
                         <option value="any">Match ANY keyword (OR)</option>
                         <option value="all">Match ALL keywords (AND)</option>
                     </select>
+                </div>
+
+                <div class="form-group">
+                    <div style="display:flex;align-items:center;justify-content:space-between">
+                        <label for="confidence-threshold" style="margin-bottom:0" title="Minimum OCR confidence (0–1). Text below this threshold is ignored during keyword matching. Higher values mean fewer but more accurate matches.">Confidence Threshold</label>
+                        <span class="confidence-value" id="confidence-value">0.0</span>
+                    </div>
+                    <input type="range" id="confidence-threshold" min="0" max="1" step="0.05" value="0" class="range-input" title="Drag to set the minimum confidence score required for OCR text to be considered. Set to 0 to include all detected text regardless of quality.">
+                    <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--text-muted);margin-top:0.25rem">
+                        <span>0 (include all)</span>
+                        <span>1 (exact only)</span>
+                    </div>
                 </div>
 
                 <!-- Exclusion Keywords -->
@@ -234,6 +254,12 @@
                             </div>
                             <button id="btn-clear-results" class="btn btn-text">Clear Gallery</button>
                         </div>
+                    </div>
+
+                    <!-- Results Filter -->
+                    <div class="results-filter hidden" id="results-filter">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input type="text" id="filter-input" placeholder="Filter results by filename, path, or text..." autocomplete="off">
                     </div>
 
                     <!-- Empty State -->
