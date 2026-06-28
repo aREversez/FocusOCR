@@ -139,6 +139,38 @@ def get_thumbnail(path: str):
 
     return FileResponse(str(cache_file), media_type='image/webp')
 
+@app.get("/api/clear-ocr-cache")
+def clear_ocr_cache():
+    """Deletes all cached OCR results."""
+    try:
+        removed = ocr_engine.clear_cache()
+        return {"status": "ok", "removed": removed}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/clear-thumb-cache")
+def clear_thumb_cache():
+    """Deletes all cached thumbnail images."""
+    try:
+        removed = 0
+        if THUMB_CACHE_DIR.exists():
+            for f in THUMB_CACHE_DIR.iterdir():
+                if f.is_file():
+                    f.unlink()
+                    removed += 1
+        return {"status": "ok", "removed": removed}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/cache-stats")
+def cache_stats():
+    """Returns the number of cached OCR result files."""
+    from backend.config import OCR_CACHE_DIR
+    count = 0
+    if OCR_CACHE_DIR.exists():
+        count = len(list(OCR_CACHE_DIR.glob("*.json")))
+    return {"cached_files": count}
+
 @app.get("/api/stop-scan")
 def stop_scan():
     """Cancels an in-progress OCR scan."""
