@@ -25,6 +25,9 @@ const btnStartScan = document.getElementById('btn-start-scan');
 const btnStopScan = document.getElementById('btn-stop-scan');
 const btnClearResults = document.getElementById('btn-clear-results');
 
+const btnThemeToggle = document.getElementById('btn-theme-toggle');
+const elThemeIcon = document.getElementById('theme-icon');
+
 const elSystemStatus = document.getElementById('system-status');
 const elStatsTotal = document.getElementById('stat-total');
 const elStatsProcessed = document.getElementById('stat-processed');
@@ -48,8 +51,27 @@ const elLightboxFilename = document.getElementById('lightbox-filename');
 const elLightboxPath = document.getElementById('lightbox-path');
 const elLightboxSnippets = document.getElementById('lightbox-ocr-snippets');
 
+// Theme management
+const THEME_KEY = 'focusocr_theme';
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    elThemeIcon.textContent = theme === 'light' ? '☀️' : '🌙';
+    try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+}
+
 // Initialize Events
 document.addEventListener('DOMContentLoaded', () => {
+    // Restore theme
+    const savedTheme = (() => { try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } })();
+    applyTheme(savedTheme === 'light' ? 'light' : 'dark');
+    btnThemeToggle.addEventListener('click', toggleTheme);
+
     btnBrowseTarget.addEventListener('click', () => browseFolder(elTargetDir));
     btnBrowseDest.addEventListener('click', () => browseFolder(elDestDir));
     btnStartScan.addEventListener('click', startScan);
