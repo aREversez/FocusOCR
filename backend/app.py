@@ -1,6 +1,10 @@
 import json
 import sys
+import os
+import io
 import asyncio
+import hashlib
+import subprocess
 import urllib.parse
 from pathlib import Path
 from typing import List, Optional
@@ -8,6 +12,7 @@ from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from PIL import Image
 
 # Same frozen-path setup as main.py, needed because this module also
 # imports sibling modules within the backend package.
@@ -83,6 +88,57 @@ def get_image(path: str):
         
     return FileResponse(str(file_path))
 
+@app.get("/api/reveal")
+def reveal_in_explorer(path: str):
+    """Opens the file's parent folder in Windows Explorer with the file selected."""
+    decoded = urllib.parse.unquote(path)
+    file_path = Path(decoded)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Path does not exist")
+    try:
+        subprocess.Popen(['explorer', '/select,', str(file_path)])
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+THUMB_CACHE_DIR = Path.home() / ".focusocr" / "thumb_cache"
+THUMB_MAX_SIZE = 600
+
+@app.get("/api/thumbnail")
+def get_thumbnail(path: str):
+    """Serves a cached 300px WebP thumbnail of the requested image."""
+    decoded = urllib.parse.unquote(path)
+    file_path = Path(decoded)
+    if not file_path.is_absolute():
+        raise HTTPException(status_code=400, detail="Path must be absolute")
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    if file_path.suffix.lower() not in IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Not a supported image format")
+
+    cache_key = hashlib.md5(f"{file_path}_{THUMB_MAX_SIZE}".encode()).hexdigest()
+    THUMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_file = THUMB_CACHE_DIR / f"{cache_key}.webp"
+
+    if not cache_file.exists():
+        try:
+            img = Image.open(file_path)
+            img = img.convert('RGB')
+            w, h = img.size
+            if w > THUMB_MAX_SIZE or h > THUMB_MAX_SIZE:
+                if w > h:
+                    new_w = THUMB_MAX_SIZE
+                    new_h = int(h * THUMB_MAX_SIZE / w)
+                else:
+                    new_h = THUMB_MAX_SIZE
+                    new_w = int(w * THUMB_MAX_SIZE / h)
+                img = img.resize((new_w, new_h), Image.LANCZOS)
+            img.save(cache_file, 'WEBP', quality=95)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to generate thumbnail: {str(e)}")
+
+    return FileResponse(str(cache_file), media_type='image/webp')
+
 @app.get("/api/stop-scan")
 def stop_scan():
     """Cancels an in-progress OCR scan."""
@@ -95,7 +151,9 @@ def scan_stream(
     dest_dir: str,
     keywords: List[str] = Query([]),
     match_logic: str = "any",
-    recursive: bool = True
+    recursive: bool = True,
+    use_regex: bool = False,
+    exclude_keywords: List[str] = Query([])
 ):
     """
     Starts the OCR scan and streams real-time updates as Server-Sent Events (SSE).
@@ -103,17 +161,14 @@ def scan_stream(
     if match_logic not in ("any", "all"):
         raise HTTPException(status_code=400, detail="match_logic must be 'any' or 'all'")
 
-    # Clean and split keywords
-    clean_kws = []
-    for kw in keywords:
-        # If keywords are passed as a single comma-separated string, split them
-        if "," in kw:
-            clean_kws.extend([k.strip() for k in kw.split(",") if k.strip()])
-        elif kw.strip():
-            clean_kws.append(kw.strip())
+    # Clean keywords (frontend sends each as a separate param, no comma-splitting needed)
+    clean_kws = [kw.strip() for kw in keywords if kw.strip()]
 
     if not clean_kws:
         raise HTTPException(status_code=400, detail="At least one valid keyword must be specified")
+    
+    # Clean exclusion keywords
+    clean_ex_kws = [kw.strip() for kw in exclude_keywords if kw.strip()]
 
     target_path = Path(target_dir)
     if not target_path.exists() or not target_path.is_dir():
@@ -126,7 +181,9 @@ def scan_stream(
                 dest_dir=dest_dir,
                 keywords=clean_kws,
                 match_logic=match_logic,
-                recursive=recursive
+                recursive=recursive,
+                use_regex=use_regex,
+                exclude_keywords=clean_ex_kws if clean_ex_kws else None
             )
             for event in generator:
                 try:

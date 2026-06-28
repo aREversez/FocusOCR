@@ -12,7 +12,7 @@ def _open_picker(result_queue: queue.Queue) -> None:
         # Keep window topmost so it doesn't get hidden behind the browser
         root.attributes('-topmost', True)
         root.focus_force()
-        
+
         folder = filedialog.askdirectory(
             parent=root,
             title="Select Folder",
@@ -32,12 +32,12 @@ def choose_directory() -> Optional[str]:
     thread = threading.Thread(target=_open_picker, args=(result_queue,))
     thread.start()
     thread.join()
-    
+
     if result_queue.empty():
         return None
-    
+
     val = result_queue.get()
     if isinstance(val, Exception):
         raise val
-        
+
     return val if val else None

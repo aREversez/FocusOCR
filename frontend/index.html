@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Keyword OCR Organizer</title>
+    <title>FocusOCR</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="alternate icon" href="favicon.ico" sizes="32x32">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -22,9 +24,14 @@
                     <p>Local Image Search & Organizer</p>
                 </div>
             </div>
-            <div class="system-status" id="system-status">
-                <span class="status-dot green"></span>
-                <span class="status-text">Ready</span>
+            <div style="display:flex;align-items:center;gap:0.75rem">
+                <button class="theme-toggle" id="btn-theme-toggle" title="Toggle theme">
+                    <span id="theme-icon">🌙</span>
+                </button>
+                <div class="system-status" id="system-status">
+                    <span class="status-dot green"></span>
+                    <span class="status-text">Ready</span>
+                </div>
             </div>
         </header>
 
@@ -73,7 +80,14 @@
 
                 <!-- Keywords Configuration -->
                 <div class="form-group">
-                    <label>Keywords (Up to 3)</label>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+                        <label style="margin-bottom:0">Keywords (Up to 3)</label>
+                        <label class="regex-toggle-label">
+                            <input type="checkbox" id="use-regex">
+                            <span class="regex-toggle-slider">.*</span>
+                            <span class="label-text">Regex</span>
+                        </label>
+                    </div>
                     <div class="keywords-inputs">
                         <div class="keyword-item">
                             <span class="kw-badge">1</span>
@@ -96,6 +110,21 @@
                         <option value="any">Match ANY keyword (OR)</option>
                         <option value="all">Match ALL keywords (AND)</option>
                     </select>
+                </div>
+
+                <!-- Exclusion Keywords -->
+                <div class="form-group">
+                    <label>Exclusion Keywords (optional)</label>
+                    <div class="keywords-inputs">
+                        <div class="keyword-item">
+                            <span class="kw-badge kw-badge-exclude">E1</span>
+                            <input type="text" class="keyword-input" id="exclude-keyword-1" placeholder="Exclude keyword..." autocomplete="off">
+                        </div>
+                        <div class="keyword-item">
+                            <span class="kw-badge kw-badge-exclude">E2</span>
+                            <input type="text" class="keyword-input" id="exclude-keyword-2" placeholder="Exclude keyword..." autocomplete="off">
+                        </div>
+                    </div>
                 </div>
 
                 <div class="action-buttons">
@@ -174,6 +203,13 @@
                     <div class="results-header">
                         <h2 class="panel-title">Matches Gallery <span class="badge hidden" id="gallery-count">0</span></h2>
                         <div class="results-actions">
+                            <div class="export-dropdown">
+                                <button id="btn-export" class="btn btn-text" disabled>Export</button>
+                                <div class="export-menu hidden" id="export-menu">
+                                    <button data-format="csv">Export CSV</button>
+                                    <button data-format="json">Export JSON</button>
+                                </div>
+                            </div>
                             <button id="btn-clear-results" class="btn btn-text">Clear Gallery</button>
                         </div>
                     </div>

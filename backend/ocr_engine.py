@@ -13,8 +13,11 @@ from backend.config import load_settings
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.bmp', '.webp', '.tiff'}
 
 def sanitize_folder_name(name: str) -> str:
-    """Removes invalid characters for folder names and returns a safe name."""
-    clean = re.sub(r'[\\/*?:"<>|]', "", name).strip()
+    """Removes invalid characters for folder names and returns a safe name.
+    Backslash (common in regex patterns like \\d) is replaced with underscore
+    instead of being stripped, so the folder name stays recognizable."""
+    safe = name.replace('\\', '_')
+    clean = re.sub(r'[/*?:"<>|]', "", safe).strip()
     return clean if clean else "unnamed_keyword"
 
 
@@ -79,51 +82,93 @@ class OCREngine:
             print(f"Error performing OCR on {img_path}: {e}")
             return "", []
 
-    def match_keywords(self, full_text: str, keywords: List[str], match_logic: str = "any") -> Tuple[bool, List[str], List[str]]:
+    def match_keywords(
+        self,
+        full_text: str,
+        keywords: List[str],
+        match_logic: str = "any",
+        use_regex: bool = False,
+        exclude_keywords: List[str] = None
+    ) -> Tuple[bool, List[str], List[str]]:
         """
         Checks if OCR text matches keywords based on 'any' or 'all' logical operators.
-        Performs case-insensitive matching and removes whitespace for Chinese character comparisons.
+        Supports plain substring matching (spaces/without-spaces for CJK robustness)
+        and regex matching. Also supports exclusion keywords — if any exclusion
+        keyword matches, the result is False regardless of include matches.
+        
         Returns:
-            - boolean: True if it matches, False otherwise
+            - boolean: True if it matches (and no exclusion keyword matched)
             - list of strings: the specific lines/snippets where the keywords were found
             - list of strings: the original keywords that actually matched
         """
         if not keywords:
             return False, [], []
         
-        # Clean keywords and map to original values
         valid_kws = [kw.strip() for kw in keywords if kw.strip()]
         if not valid_kws:
             return False, [], []
-            
-        full_text_lower = full_text.lower()
-        full_text_no_spaces = "".join(full_text_lower.split())
+        
+        # Validate regex patterns upfront
+        if use_regex:
+            try:
+                for kw in valid_kws + (exclude_keywords or []):
+                    re.compile(kw)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern: {e}")
         
         matched_kws = []
         for kw in valid_kws:
-            kw_lower = kw.lower()
-            # Check for matches either with spaces or without spaces (robust for Chinese/English mixed)
-            if kw_lower in full_text_lower or kw_lower in full_text_no_spaces:
-                matched_kws.append(kw)
-                
+            if use_regex:
+                if re.search(kw, full_text, re.IGNORECASE):
+                    matched_kws.append(kw)
+            else:
+                kw_lower = kw.lower()
+                full_text_lower = full_text.lower()
+                full_text_no_spaces = "".join(full_text_lower.split())
+                if kw_lower in full_text_lower or kw_lower in full_text_no_spaces:
+                    matched_kws.append(kw)
+        
         if match_logic == "all":
             is_match = len(matched_kws) == len(valid_kws)
-        else: # "any"
+        else:
             is_match = len(matched_kws) > 0
-            
-        # Extract matching sentences/snippets
+        
+        # Exclusion keyword check
+        if is_match and exclude_keywords:
+            for ex_kw in exclude_keywords:
+                ex_kw = ex_kw.strip()
+                if not ex_kw:
+                    continue
+                if use_regex:
+                    if re.search(ex_kw, full_text, re.IGNORECASE):
+                        return False, [], []
+                else:
+                    ex_lower = ex_kw.lower()
+                    full_text_lower = full_text.lower()
+                    full_text_no_spaces = "".join(full_text_lower.split())
+                    if ex_lower in full_text_lower or ex_lower in full_text_no_spaces:
+                        return False, [], []
+        
         snippets = []
         if is_match:
             lines = full_text.split('\n')
-            # Set containing lowercased keywords that matched
             matched_kws_lower = {k.lower() for k in matched_kws}
             for line in lines:
-                line_lower = line.lower()
-                line_no_spaces = "".join(line_lower.split())
-                for kw_lower in matched_kws_lower:
-                    if kw_lower in line_lower or kw_lower in line_no_spaces:
-                        snippets.append(line.strip())
-                        break # Only add the line once
+                line_stripped = line.strip()
+                if not line_stripped:
+                    continue
+                for kw_orig in matched_kws:
+                    if use_regex:
+                        if re.search(kw_orig, line_stripped, re.IGNORECASE):
+                            snippets.append(line_stripped)
+                            break
+                    else:
+                        ll = line_stripped.lower()
+                        lns = "".join(ll.split())
+                        kwl = kw_orig.lower()
+                        if kwl in ll or kwl in lns:
+                            snippets.append(line_stripped)
+                            break
                         
         return is_match, snippets, matched_kws
 
@@ -150,7 +195,9 @@ class OCREngine:
         dest_dir: str,
         keywords: List[str],
         match_logic: str = "any",
-        recursive: bool = True
+        recursive: bool = True,
+        use_regex: bool = False,
+        exclude_keywords: List[str] = None
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Generator yielding real-time scanning progress updates.
@@ -215,7 +262,10 @@ class OCREngine:
             full_text, detailed_results = self.extract_text_and_boxes(img_path)
             
             # Check match
-            is_match, snippets, matched_kws = self.match_keywords(full_text, keywords, match_logic)
+            is_match, snippets, matched_kws = self.match_keywords(
+                full_text, keywords, match_logic,
+                use_regex=use_regex, exclude_keywords=exclude_keywords
+            )
             
             copied_paths = []
             if is_match:
@@ -258,7 +308,8 @@ class OCREngine:
                     "filename": img_path.name,
                     "original_path": str(img_path),
                     "copied_path": copied_path_str,
-                    "snippets": snippets[:_max_snippets]  # Limit snippets for display brevity
+                    "snippets": snippets[:_max_snippets],  # Limit snippets for display brevity
+                    "matched_keywords": matched_kws
                 } if is_match else None
             }
 
