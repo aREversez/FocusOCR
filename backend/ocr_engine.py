@@ -1,13 +1,17 @@
 import os
+import json
+import hashlib
 import shutil
 import time
 import re
 import threading
-from typing import List, Generator, Dict, Any, Tuple
+from typing import List, Generator, Dict, Any, Tuple, Optional
 from pathlib import Path
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
-from backend.config import load_settings
+from backend.config import load_settings, OCR_CACHE_DIR
+
+OCR_ENGINE_VERSION = 1  # Bump this if RapidOCR version changes or extraction logic changes
 
 # Supported image file extensions
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.bmp', '.webp', '.tiff'}
@@ -48,13 +52,73 @@ class OCREngine:
                 images.append(p)
         return sorted(images, key=lambda x: x.stat().st_mtime, reverse=True)
 
+    def _cache_key(self, img_path: Path) -> str:
+        st = img_path.stat()
+        raw = f"{img_path.resolve()}_{st.st_mtime_ns}_{st.st_size}"
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    def _cache_path(self, cache_key: str) -> Path:
+        return OCR_CACHE_DIR / f"{cache_key}.json"
+
+    def _load_cache(self, img_path: Path) -> Optional[Tuple[str, List[Dict[str, Any]]]]:
+        settings = load_settings()
+        if not settings.enable_ocr_cache:
+            return None
+        key = self._cache_key(img_path)
+        cache_file = self._cache_path(key)
+        if not cache_file.exists():
+            return None
+        try:
+            data = json.loads(cache_file.read_text(encoding="utf-8"))
+            if data.get("engine_version") != OCR_ENGINE_VERSION:
+                return None
+            return data["text"], data["detailed_results"]
+        except Exception:
+            return None
+
+    def _save_cache(self, img_path: Path, text: str, detailed_results: List[Dict[str, Any]]) -> None:
+        settings = load_settings()
+        if not settings.enable_ocr_cache:
+            return
+        key = self._cache_key(img_path)
+        OCR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_file = self._cache_path(key)
+        try:
+            cache_file.write_text(
+                json.dumps({
+                    "engine_version": OCR_ENGINE_VERSION,
+                    "path": str(img_path.resolve()),
+                    "text": text,
+                    "detailed_results": detailed_results
+                }, ensure_ascii=False),
+                encoding="utf-8"
+            )
+        except Exception as e:
+            print(f"Failed to write OCR cache for {img_path}: {e}")
+
+    def clear_cache(self) -> int:
+        """Deletes all cached OCR results. Returns the number of files removed."""
+        if not OCR_CACHE_DIR.exists():
+            return 0
+        count = 0
+        for f in OCR_CACHE_DIR.iterdir():
+            if f.suffix == ".json":
+                f.unlink()
+                count += 1
+        return count
+
     def extract_text_and_boxes(self, img_path: Path) -> Tuple[str, List[Dict[str, Any]]]:
         """
-        Runs OCR on the image.
+        Runs OCR on the image (or returns cached result if available).
         Returns:
             - Full text joined by newlines.
             - A list of dicts containing text, confidence, and bounding box coordinates.
         """
+        # Check cache first
+        cached = self._load_cache(img_path)
+        if cached is not None:
+            return cached
+
         try:
             # RapidOCR handles path strings directly
             result, elapse = self._ocr(str(img_path))
@@ -76,7 +140,10 @@ class OCREngine:
                     "box": box
                 })
                 
-            return "\n".join(full_text_lines), detailed_results
+            full_text = "\n".join(full_text_lines)
+            # Save to cache
+            self._save_cache(img_path, full_text, detailed_results)
+            return full_text, detailed_results
         except Exception as e:
             # Log error or print, return empty
             print(f"Error performing OCR on {img_path}: {e}")
