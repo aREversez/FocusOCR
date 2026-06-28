@@ -1,6 +1,10 @@
 import json
 import sys
+import os
+import io
 import asyncio
+import hashlib
+import subprocess
 import urllib.parse
 from pathlib import Path
 from typing import List, Optional
@@ -8,6 +12,7 @@ from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from PIL import Image
 
 # Same frozen-path setup as main.py, needed because this module also
 # imports sibling modules within the backend package.
@@ -82,6 +87,57 @@ def get_image(path: str):
         raise HTTPException(status_code=400, detail="Requested file is not a supported image format")
         
     return FileResponse(str(file_path))
+
+@app.get("/api/reveal")
+def reveal_in_explorer(path: str):
+    """Opens the file's parent folder in Windows Explorer with the file selected."""
+    decoded = urllib.parse.unquote(path)
+    file_path = Path(decoded)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Path does not exist")
+    try:
+        subprocess.Popen(['explorer', '/select,', str(file_path)])
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+THUMB_CACHE_DIR = Path.home() / ".focusocr" / "thumb_cache"
+THUMB_MAX_SIZE = 600
+
+@app.get("/api/thumbnail")
+def get_thumbnail(path: str):
+    """Serves a cached 300px WebP thumbnail of the requested image."""
+    decoded = urllib.parse.unquote(path)
+    file_path = Path(decoded)
+    if not file_path.is_absolute():
+        raise HTTPException(status_code=400, detail="Path must be absolute")
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    if file_path.suffix.lower() not in IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Not a supported image format")
+
+    cache_key = hashlib.md5(f"{file_path}_{THUMB_MAX_SIZE}".encode()).hexdigest()
+    THUMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_file = THUMB_CACHE_DIR / f"{cache_key}.webp"
+
+    if not cache_file.exists():
+        try:
+            img = Image.open(file_path)
+            img = img.convert('RGB')
+            w, h = img.size
+            if w > THUMB_MAX_SIZE or h > THUMB_MAX_SIZE:
+                if w > h:
+                    new_w = THUMB_MAX_SIZE
+                    new_h = int(h * THUMB_MAX_SIZE / w)
+                else:
+                    new_h = THUMB_MAX_SIZE
+                    new_w = int(w * THUMB_MAX_SIZE / h)
+                img = img.resize((new_w, new_h), Image.LANCZOS)
+            img.save(cache_file, 'WEBP', quality=95)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to generate thumbnail: {str(e)}")
+
+    return FileResponse(str(cache_file), media_type='image/webp')
 
 @app.get("/api/stop-scan")
 def stop_scan():

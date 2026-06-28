@@ -27,6 +27,8 @@ const btnBrowseDest = document.getElementById('btn-browse-dest');
 const btnStartScan = document.getElementById('btn-start-scan');
 const btnStopScan = document.getElementById('btn-stop-scan');
 const btnClearResults = document.getElementById('btn-clear-results');
+const btnExport = document.getElementById('btn-export');
+const elExportMenu = document.getElementById('export-menu');
 
 const btnThemeToggle = document.getElementById('btn-theme-toggle');
 const elThemeIcon = document.getElementById('theme-icon');
@@ -68,6 +70,35 @@ function toggleTheme() {
     applyTheme(current === 'dark' ? 'light' : 'dark');
 }
 
+// Export matched results as CSV or JSON
+function exportResults(format) {
+    if (matchedFiles.length === 0) return;
+    let content, filename, mime;
+    if (format === 'csv') {
+        content = '\ufeff' + 'filename,path,keywords,snippets\n' +
+            matchedFiles.map(m =>
+                `"${m.filename}","${m.original_path}","${(m.matched_keywords||[]).join('; ')}","${(m.snippets||[]).join(' | ')}"`
+            ).join('\n');
+        filename = 'focusocr_results.csv';
+        mime = 'text/csv;charset=utf-8';
+    } else {
+        content = JSON.stringify(matchedFiles, null, 2);
+        filename = 'focusocr_results.json';
+        mime = 'application/json';
+    }
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+
+
 // Initialize Events
 document.addEventListener('DOMContentLoaded', () => {
     // Restore theme
@@ -88,6 +119,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // Close lightbox on Escape key
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeLightbox();
+    });
+
+    // Export dropdown
+    btnExport.addEventListener('click', () => {
+        elExportMenu.classList.toggle('hidden');
+    });
+    elExportMenu.addEventListener('click', (e) => {
+        if (e.target.dataset.format) {
+            exportResults(e.target.dataset.format);
+            elExportMenu.classList.add('hidden');
+        }
+    });
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.export-dropdown')) {
+            elExportMenu.classList.add('hidden');
+        }
     });
 
     // Render initial folder and scan histories
@@ -127,6 +174,10 @@ function updateSystemStatus(text, dotColor) {
 }
 
 // Clear matching results
+function updateExportButton() {
+    btnExport.disabled = matchedFiles.length === 0;
+}
+
 function clearGallery() {
     matchedFiles = [];
     elResultsGrid.innerHTML = '';
@@ -138,6 +189,7 @@ function clearGallery() {
     // Reset stats
     scanStats = { total: 0, processed: 0, matches: 0 };
     updateStatsUI();
+    updateExportButton();
 }
 
 function updateStatsUI() {
@@ -187,7 +239,8 @@ function addMatchToGallery(match, keywords) {
     elEmptyState.classList.add('hidden');
     elResultsGrid.classList.remove('hidden');
     
-    const imageSrc = `/api/image?path=${encodeURIComponent(match.original_path)}`;
+    const thumbSrc = `/api/thumbnail?path=${encodeURIComponent(match.original_path)}`;
+    const encodedPath = encodeURIComponent(match.original_path);
     
     const card = document.createElement('div');
     card.className = 'result-card';
@@ -199,7 +252,7 @@ function addMatchToGallery(match, keywords) {
     
     card.innerHTML = `
         <div class="card-img-wrapper">
-            <img src="${imageSrc}" alt="${escapeHTML(match.filename)}" loading="lazy">
+            <img src="${thumbSrc}" alt="${escapeHTML(match.filename)}" loading="lazy">
             <div class="card-overlay">
                 <span class="overlay-zoom-icon">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
@@ -213,11 +266,17 @@ function addMatchToGallery(match, keywords) {
             </div>
             ${snippetsHTML ? `<div class="card-snippets">${snippetsHTML}</div>` : ''}
             <div class="card-actions">
-                <button class="btn btn-secondary btn-copy-path" data-path="${escapeHTML(match.original_path)}">
-                    Copy Path
+                <button class="btn btn-secondary btn-copy-path" title="Copy path">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <span class="btn-label">Copy</span>
                 </button>
-                <button class="btn btn-primary btn-zoom" data-path="${escapeHTML(match.original_path)}">
-                    Preview
+                <button class="btn btn-secondary btn-reveal" title="Open in Explorer">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    <span class="btn-label">Open</span>
+                </button>
+                <button class="btn btn-primary btn-zoom" title="Preview">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                    <span class="btn-label">View</span>
                 </button>
             </div>
         </div>
@@ -228,6 +287,10 @@ function addMatchToGallery(match, keywords) {
     imgWrapper.addEventListener('click', () => openLightbox(match, keywords));
     
     card.querySelector('.btn-zoom').addEventListener('click', () => openLightbox(match, keywords));
+    
+    card.querySelector('.btn-reveal').addEventListener('click', () => {
+        fetch(`/api/reveal?path=${encodedPath}`);
+    });
     
     const copyBtn = card.querySelector('.btn-copy-path');
     copyBtn.addEventListener('click', () => {
@@ -334,6 +397,7 @@ function startScan() {
             if (data.is_match && data.match_details) {
                 matchedFiles.push(data.match_details);
                 addMatchToGallery(data.match_details, keywords);
+                updateExportButton();
                 
                 elGalleryCount.textContent = matchedFiles.length;
                 elGalleryCount.classList.remove('hidden');
@@ -629,6 +693,7 @@ function loadScanRecord(record) {
         elGalleryCount.classList.remove('hidden');
     }
 
+    updateExportButton();
     updateSystemStatus('Loaded from history', 'green');
 }
 
