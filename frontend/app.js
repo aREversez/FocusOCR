@@ -207,7 +207,7 @@ async function browseFolder(inputElement) {
         }
         updateSystemStatus('Ready', 'green');
     } catch (err) {
-        alert('Error picking directory: ' + err.message);
+        showToast('Error picking directory: ' + err.message, 'error');
         updateSystemStatus('Ready', 'green');
     }
 }
@@ -255,7 +255,7 @@ async function clearOcrCache() {
             setTimeout(() => updateSystemStatus('Ready', 'green'), 3000);
         }
     } catch (e) {
-        alert('Failed to clear OCR cache: ' + e.message);
+        showToast('Failed to clear OCR cache: ' + e.message, 'error');
     }
 }
 
@@ -281,7 +281,7 @@ async function clearThumbCache() {
             setTimeout(() => updateSystemStatus('Ready', 'green'), 3000);
         }
     } catch (e) {
-        alert('Failed to clear thumbnail cache: ' + e.message);
+        showToast('Failed to clear thumbnail cache: ' + e.message, 'error');
     }
 }
 
@@ -328,6 +328,21 @@ function highlightText(text, keywords) {
     return escaped;
 }
 
+// Toast notification system
+function showToast(message, type) {
+    type = type || 'info';
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast toast-' + type;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s';
+        setTimeout(() => toast.remove(), 300);
+    }, 3500);
+}
+
 // Add a matched image to the gallery
 function addMatchToGallery(match, keywords, fromCache) {
     elEmptyState.classList.add('hidden');
@@ -341,12 +356,17 @@ function addMatchToGallery(match, keywords, fromCache) {
     const card = document.createElement('div');
     card.className = 'result-card';
     card.dataset.search = searchText;
+    card.dataset.originalPath = match.original_path;
     
     // Build highlights for snippets
     const snippetsHTML = match.snippets.map(snippet => 
         `<div class="snippet-line">${highlightText(snippet, keywords)}</div>`
     ).join('');
     
+    const dupBadge = match.is_duplicate
+        ? '<span class="card-cache-badge" data-dup style="color:var(--accent-emerald);background:rgba(16,185,129,0.1);border-color:rgba(16,185,129,0.2)" title="Already existed in destination — reused without re-copying"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Dup</span>'
+        : '';
+
     card.innerHTML = `
         <div class="card-img-wrapper">
             <img src="${thumbSrc}" alt="${escapeHTML(match.filename)}" loading="lazy">
@@ -361,6 +381,7 @@ function addMatchToGallery(match, keywords, fromCache) {
                 <div style="display:flex;align-items:center;gap:0.3rem">
                     <div class="card-title" title="${escapeHTML(match.filename)}">${escapeHTML(match.filename)}</div>
                     ${fromCache ? '<span class="card-cache-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="2"/></svg>Cache</span>' : ''}
+                    ${dupBadge}
                 </div>
                 <div class="card-path" title="${escapeHTML(match.original_path)}">${escapeHTML(match.original_path)}</div>
             </div>
@@ -428,15 +449,15 @@ function startScan() {
     const useRegex = elUseRegex.checked;
 
     if (!targetDir) {
-        alert('Please enter or browse a target directory to scan.');
+        showToast('Please enter or browse a target directory to scan.', 'warning');
         return;
     }
     if (!destDir) {
-        alert('Please enter or browse a destination directory.');
+        showToast('Please enter or browse a destination directory.', 'warning');
         return;
     }
     if (keywords.length === 0) {
-        alert('Please enter at least one keyword (e.g., in Keyword 1).');
+        showToast('Please enter at least one keyword.', 'warning');
         return;
     }
     // Save current paths to history
@@ -551,7 +572,7 @@ function startScan() {
         else if (data.status === 'error') {
             elProgressStatus.textContent = 'Error occurred!';
             elProgressCurrent.textContent = data.message;
-            alert('Scan error: ' + data.message);
+            showToast('Scan error: ' + data.message, 'error');
             endScan('Error', 'red');
         }
     };
@@ -560,7 +581,7 @@ function startScan() {
         console.error('SSE Error:', err);
         elProgressStatus.textContent = 'Disconnected';
         elProgressCurrent.textContent = 'Connection to server lost.';
-        alert('Server connection was interrupted. The scan might still be running or has completed.');
+        showToast('Server connection was interrupted. The scan might still be running or has completed.', 'error');
         endScan('Disconnected', 'red');
     };
 }

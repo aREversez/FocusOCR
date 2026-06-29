@@ -242,21 +242,28 @@ class OCREngine:
         return is_match, snippets, matched_kws
 
 
-    def copy_file_resolve_conflict(self, src: Path, dest_dir: Path) -> Path:
-        """Copies file to dest_dir, resolving naming conflicts by appending _1, _2 etc."""
+    def copy_file_resolve_conflict(self, src: Path, dest_dir: Path) -> Tuple[Path, bool]:
+        """Copies file to dest_dir, resolving naming conflicts by appending _1, _2 etc.
+        Returns (destination_path, is_duplicate) — is_duplicate is True when an identical
+        file (same name + size) already existed and was reused instead of re-copied."""
         dest_dir.mkdir(parents=True, exist_ok=True)
         filename = src.name
         name_part = src.stem
         ext_part = src.suffix
         
         dest_file = dest_dir / filename
+        src_size = src.stat().st_size
+        # Duplicate check: same name + same size -> reuse existing file
+        if dest_file.exists() and dest_file.stat().st_size == src_size:
+            return dest_file, True
+        
         counter = 1
         while dest_file.exists():
             dest_file = dest_dir / f"{name_part}_{counter}{ext_part}"
             counter += 1
             
         shutil.copy2(src, dest_file)
-        return dest_file
+        return dest_file, False
 
     def scan_and_organize(
         self,
@@ -343,6 +350,7 @@ class OCREngine:
             )
             
             copied_paths = []
+            is_duplicate = False
             if is_match:
                 if match_logic == "all":
                     # AND mode: single folder named "A & B"
@@ -350,20 +358,22 @@ class OCREngine:
                     safe_folder = sanitize_folder_name(combined_name)
                     subfolder = dest_path / safe_folder
                     try:
-                        copied_file = self.copy_file_resolve_conflict(img_path, subfolder)
+                        copied_file, dup = self.copy_file_resolve_conflict(img_path, subfolder)
                         copied_paths.append(str(copied_file))
+                        if dup: is_duplicate = True
                     except Exception as e:
-                        print(f"Error copying file {img_path} to {subfolder}: {e}")
+                        print(f"ERROR: Error copying file {img_path} to {subfolder}: {e}")
                 else:
                     # ANY mode: per-keyword folders
                     for kw in matched_kws:
                         safe_kw_folder = sanitize_folder_name(kw)
                         subfolder = dest_path / safe_kw_folder
                         try:
-                            copied_file = self.copy_file_resolve_conflict(img_path, subfolder)
+                            copied_file, dup = self.copy_file_resolve_conflict(img_path, subfolder)
                             copied_paths.append(str(copied_file))
+                            if dup: is_duplicate = True
                         except Exception as e:
-                            print(f"Error copying file {img_path} to {subfolder}: {e}")
+                            print(f"ERROR: Error copying file {img_path} to {subfolder}: {e}")
 
                 if copied_paths:
                     matched_files += 1
@@ -385,6 +395,7 @@ class OCREngine:
                     "filename": img_path.name,
                     "original_path": str(img_path),
                     "copied_path": copied_path_str,
+                    "is_duplicate": is_duplicate,
                     "snippets": snippets[:_max_snippets],  # Limit snippets for display brevity
                     "matched_keywords": matched_kws
                 } if is_match else None
