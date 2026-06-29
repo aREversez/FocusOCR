@@ -5,10 +5,12 @@ import shutil
 import time
 import re
 import threading
+import logging
 from typing import List, Generator, Dict, Any, Tuple, Optional
 from pathlib import Path
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
+from onnxruntime import get_available_providers
 from backend.config import load_settings, OCR_CACHE_DIR
 
 OCR_ENGINE_VERSION = 1  # Bump this if RapidOCR version changes or extraction logic changes
@@ -27,9 +29,29 @@ def sanitize_folder_name(name: str) -> str:
 
 class OCREngine:
     def __init__(self):
-        # Initialize RapidOCR engine
-        self._ocr = RapidOCR()
         self._cancel_event = threading.Event()
+        self._init_ocr_engine()
+
+    def _init_ocr_engine(self):
+        """Initialize RapidOCR with GPU acceleration if available."""
+        # Suppress RapidOCR's verbose per-module INFO logs by patching
+        # the get_logger reference in infer_engine (where OrtInferSession lives)
+        import rapidocr_onnxruntime.utils.infer_engine as _ie
+        _orig_get_logger = _ie.get_logger
+        def _silent_logger(name):
+            logger = _orig_get_logger(name)
+            logger.setLevel(logging.WARNING)
+            return logger
+        _ie.get_logger = _silent_logger
+
+        providers = get_available_providers()
+        use_dml = "DmlExecutionProvider" in providers
+        if use_dml:
+            print("DirectML GPU acceleration detected — enabling GPU inference")
+            self._ocr = RapidOCR(det_use_dml=True, cls_use_dml=True, rec_use_dml=True)
+        else:
+            print("No GPU acceleration available — using CPU inference")
+            self._ocr = RapidOCR()
 
     def cancel_scan(self):
         """Signals the current scan to stop at the next opportunity."""
