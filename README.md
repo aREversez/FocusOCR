@@ -17,6 +17,9 @@ FocusOCR is a lightweight, fully offline desktop web app that scans images for t
 - **Folder history** — recent target/dest directories remembered per-field
 - **Real-time SSE progress** — live progress bar, current file display, per-card cache badge
 - **Cancel scan** — server-side cancellation stops OCR immediately
+- **GPU acceleration (DirectML)** — auto-detects GPU on Windows; install `onnxruntime-directml` to enable
+- **Duplicate detection** — files already in destination are reused and marked with a "Dup" badge
+- **Toast notifications** — auto-dismissing toasts replace alert() for non-blocking feedback
 - **OCR result caching** — `~/.focusocr/ocr_cache/` avoids re-scanning unchanged files; configurable toggle in UI
 - **Confidence filter** — slider (0–1) excludes low-quality OCR text from matching
 - **Search within results** — client-side text filter on gallery cards
@@ -64,6 +67,9 @@ dist/
 ### Prerequisites
 ```bash
 pip install fastapi uvicorn Pillow rapidocr_onnxruntime pyinstaller
+# For GPU acceleration (Windows, any GPU):
+pip uninstall onnxruntime
+pip install onnxruntime-directml
 ```
 
 ### Run from source
