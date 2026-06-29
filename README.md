@@ -2,6 +2,8 @@
 
 FocusOCR is a lightweight, fully offline desktop web app that scans images for text, matches keywords (plain or regex), and auto-organizes results into keyword-named folders. Chinese + English OCR powered by RapidOCR (PP-OCRv4).
 
+![](./assets/screenshot.png)
+
 ---
 
 ## Key Features
