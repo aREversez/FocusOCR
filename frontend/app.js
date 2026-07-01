@@ -359,7 +359,7 @@ function addMatchToGallery(match, keywords, fromCache) {
     card.dataset.originalPath = match.original_path;
     
     // Build highlights for snippets
-    const snippetsHTML = match.snippets.map(snippet => 
+    const snippetsHTML = (match.snippets || []).map(snippet => 
         `<div class="snippet-line">${highlightText(snippet, keywords)}</div>`
     ).join('');
     
