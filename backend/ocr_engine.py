@@ -50,6 +50,14 @@ class OCREngine:
             print("DirectML GPU acceleration detected — enabling GPU inference")
             self._ocr = RapidOCR(det_use_dml=True, cls_use_dml=True, rec_use_dml=True)
         else:
+            # Check if DirectML.dll exists but provider is hidden by CPU-only onnxruntime
+            import onnxruntime as _ort
+            _capi_dir = os.path.dirname(_ort.__file__)
+            _dml_dll = os.path.join(_capi_dir, "capi", "DirectML.dll")
+            if os.path.exists(_dml_dll):
+                print("WARNING: DirectML.dll found but DmlExecutionProvider unavailable.")
+                print("  The CPU-only 'onnxruntime' package is overriding the DirectML build.")
+                print("  Fix: run 'pip uninstall onnxruntime' to let onnxruntime-directml take over.")
             print("No GPU acceleration available — using CPU inference")
             self._ocr = RapidOCR()
 
@@ -72,7 +80,13 @@ class OCREngine:
         for p in target_path.glob(pattern):
             if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
                 images.append(p)
-        return sorted(images, key=lambda x: x.stat().st_mtime, reverse=True)
+        # Safe sort — skip files deleted between glob and sort
+        def _mtime_or_zero(p):
+            try:
+                return p.stat().st_mtime
+            except OSError:
+                return 0
+        return sorted(images, key=_mtime_or_zero, reverse=True)
 
     def _cache_key(self, img_path: Path) -> str:
         st = img_path.stat()
@@ -400,6 +414,7 @@ class OCREngine:
                 if copied_paths:
                     matched_files += 1
             
+            had_copy = bool(copied_paths)
             copied_path_str = ", ".join(copied_paths) if copied_paths else None
             
             # Yield progress for this file
@@ -412,7 +427,7 @@ class OCREngine:
                 "from_cache": from_cache,
                 "current_file": str(img_path.relative_to(target_dir)),
                 "current_full_path": str(img_path),
-                "is_match": is_match,
+                "is_match": had_copy,
                 "match_details": {
                     "filename": img_path.name,
                     "original_path": str(img_path),
@@ -420,8 +435,9 @@ class OCREngine:
                     "is_duplicate": is_duplicate,
                     "snippets": snippets[:_max_snippets],  # Limit snippets for display brevity
                     "matched_keywords": matched_kws
-                } if is_match else None
+                } if had_copy else None
             }
+
 
 
         yield {
