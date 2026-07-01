@@ -29,6 +29,7 @@ exe = EXE(
     a.datas,
     [],
     name='FocusOCR',
+    icon=os.path.join('assets', 'icon.ico'),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
