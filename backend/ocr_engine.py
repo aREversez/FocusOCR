@@ -9,8 +9,7 @@ import logging
 from typing import List, Generator, Dict, Any, Tuple, Optional
 from pathlib import Path
 from PIL import Image
-from rapidocr_onnxruntime import RapidOCR
-from onnxruntime import get_available_providers
+import importlib
 from backend.config import load_settings, OCR_CACHE_DIR
 
 OCR_ENGINE_VERSION = 1  # Bump this if RapidOCR version changes or extraction logic changes
@@ -44,15 +43,16 @@ class OCREngine:
             return logger
         _ie.get_logger = _silent_logger
 
-        providers = get_available_providers()
+        onnxruntime = importlib.import_module("onnxruntime")
+        providers = onnxruntime.get_available_providers()
         use_dml = "DmlExecutionProvider" in providers
+        RapidOCR = importlib.import_module("rapidocr_onnxruntime").RapidOCR
         if use_dml:
             print("DirectML GPU acceleration detected — enabling GPU inference")
             self._ocr = RapidOCR(det_use_dml=True, cls_use_dml=True, rec_use_dml=True)
         else:
             # Check if DirectML.dll exists but provider is hidden by CPU-only onnxruntime
-            import onnxruntime as _ort
-            _capi_dir = os.path.dirname(_ort.__file__)
+            _capi_dir = os.path.dirname(onnxruntime.__file__)
             _dml_dll = os.path.join(_capi_dir, "capi", "DirectML.dll")
             if os.path.exists(_dml_dll):
                 print("WARNING: DirectML.dll found but DmlExecutionProvider unavailable.")
@@ -187,8 +187,8 @@ class OCREngine:
             return filtered_text, filtered, cached is not None
         return all_text, all_details, cached is not None
 
+    @staticmethod
     def match_keywords(
-        self,
         full_text: str,
         keywords: List[str],
         match_logic: str = "any",
@@ -257,7 +257,6 @@ class OCREngine:
         snippets = []
         if is_match:
             lines = full_text.split('\n')
-            matched_kws_lower = {k.lower() for k in matched_kws}
             for line in lines:
                 line_stripped = line.strip()
                 if not line_stripped:

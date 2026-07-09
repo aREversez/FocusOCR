@@ -85,6 +85,11 @@ Server starts on port **9000** (falls back to 9001, 9002...).
 pyinstaller --clean FocusOCR.spec
 ```
 
+### Run tests
+```bash
+python -m unittest discover -s tests
+```
+
 ---
 
 ## Configuration
