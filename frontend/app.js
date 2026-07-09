@@ -25,6 +25,8 @@ const elExcludeKeyword2 = document.getElementById('exclude-keyword-2');
 const elConfidenceThreshold = document.getElementById('confidence-threshold');
 const elConfidenceValue = document.getElementById('confidence-value');
 const elCacheEnabled = document.getElementById('cache-enabled');
+const elPreviewBadge = document.getElementById('preview-badge');
+const elStatsMatchLabel = document.getElementById('stat-match-label');
 
 
 const btnBrowseTarget = document.getElementById('btn-browse-target');
@@ -465,17 +467,20 @@ function startScan() {
         showToast('Please enter or browse a target directory to scan.', 'warning');
         return;
     }
-    if (!destDir) {
-        showToast('Please enter or browse a destination directory.', 'warning');
-        return;
-    }
     if (keywords.length === 0) {
         showToast('Please enter at least one keyword.', 'warning');
         return;
     }
     // Save current paths to history
     addToHistory('target', targetDir);
-    addToHistory('dest', destDir);
+    if (destDir) {
+        addToHistory('dest', destDir);
+    }
+
+    // Preview mode indicator
+    const isPreview = !destDir;
+    elPreviewBadge.classList.toggle('hidden', !isPreview);
+    elStatsMatchLabel.textContent = isPreview ? 'Matched' : 'Matched & Copied';
 
 
     // Initialize gallery and progress bar

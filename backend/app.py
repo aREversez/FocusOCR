@@ -235,16 +235,17 @@ def scan_stream(
         raise HTTPException(status_code=400, detail="Target directory does not exist")
 
     if not dest_dir or not dest_dir.strip():
-        raise HTTPException(status_code=400, detail="Destination directory must be specified")
+        dest_dir = ""
 
-    dest_path = Path(dest_dir)
-    target_resolved = target_path.resolve()
-    dest_resolved = dest_path.resolve()
-    if target_resolved == dest_resolved or target_resolved in dest_resolved.parents or dest_resolved in target_resolved.parents:
-        raise HTTPException(
-            status_code=400,
-            detail="Target and destination directories must not overlap or contain one another."
-        )
+    if dest_dir:
+        dest_path = Path(dest_dir)
+        target_resolved = target_path.resolve()
+        dest_resolved = dest_path.resolve()
+        if target_resolved == dest_resolved or target_resolved in dest_resolved.parents or dest_resolved in target_resolved.parents:
+            raise HTTPException(
+                status_code=400,
+                detail="Target and destination directories must not overlap or contain one another."
+            )
 
     def event_generator():
         try:

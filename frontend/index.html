@@ -56,7 +56,10 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="dest-dir">Destination Directory</label>
+                    <label for="dest-dir">
+                        Destination Directory
+                        <span class="preview-badge hidden" id="preview-badge">Preview Only</span>
+                    </label>
                     <div class="input-with-btn">
                         <input type="text" id="dest-dir" placeholder="Select folder to save matches..." autocomplete="off">
                         <button type="button" class="btn btn-secondary" id="btn-browse-dest" title="Browse destination folder">
@@ -194,7 +197,7 @@
                     </div>
                     <div class="stat-card">
                         <div class="stat-info">
-                            <span class="stat-label">Matched & Copied</span>
+                            <span class="stat-label" id="stat-match-label">Matched &amp; Copied</span>
                             <span class="stat-value" id="stat-matches">0</span>
                         </div>
                         <div class="stat-icon green">

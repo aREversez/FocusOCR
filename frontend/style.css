@@ -779,6 +779,20 @@ select:focus {
     margin-left: 0.5rem;
 }
 
+.preview-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #f59e0b;
+    border: 1px solid #f59e0b;
+    border-radius: 4px;
+    padding: 0.05rem 0.4rem;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    opacity: 0.85;
+}
+
 .empty-state {
     flex: 1;
     display: flex;
