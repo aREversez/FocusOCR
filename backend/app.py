@@ -97,7 +97,13 @@ def reveal_in_explorer(path: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Path does not exist")
     try:
-        subprocess.Popen(['explorer', '/select,', str(file_path)])
+        system = os.name
+        if system == 'nt':
+            subprocess.Popen(['explorer', '/select,', str(file_path)])
+        elif sys.platform == 'darwin':
+            subprocess.Popen(['open', '-R', str(file_path)])
+        else:
+            subprocess.Popen(['xdg-open', str(file_path.parent)])
         return {"status": "ok"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -117,7 +123,8 @@ def get_thumbnail(path: str):
     if file_path.suffix.lower() not in IMAGE_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Not a supported image format")
 
-    cache_key = hashlib.md5(f"{file_path}_{THUMB_MAX_SIZE}".encode()).hexdigest()
+    stat = file_path.stat()
+    cache_key = hashlib.md5(f"{file_path}_{THUMB_MAX_SIZE}_{stat.st_mtime_ns}_{stat.st_size}".encode()).hexdigest()
     THUMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_file = THUMB_CACHE_DIR / f"{cache_key}.webp"
 
@@ -226,6 +233,19 @@ def scan_stream(
     target_path = Path(target_dir)
     if not target_path.exists() or not target_path.is_dir():
         raise HTTPException(status_code=400, detail="Target directory does not exist")
+
+    if not dest_dir or not dest_dir.strip():
+        dest_dir = ""
+
+    if dest_dir:
+        dest_path = Path(dest_dir)
+        target_resolved = target_path.resolve()
+        dest_resolved = dest_path.resolve()
+        if target_resolved == dest_resolved or target_resolved in dest_resolved.parents or dest_resolved in target_resolved.parents:
+            raise HTTPException(
+                status_code=400,
+                detail="Target and destination directories must not overlap or contain one another."
+            )
 
     def event_generator():
         try:

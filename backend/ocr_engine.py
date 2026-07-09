@@ -9,8 +9,7 @@ import logging
 from typing import List, Generator, Dict, Any, Tuple, Optional
 from pathlib import Path
 from PIL import Image
-from rapidocr_onnxruntime import RapidOCR
-from onnxruntime import get_available_providers
+import importlib
 from backend.config import load_settings, OCR_CACHE_DIR
 
 OCR_ENGINE_VERSION = 1  # Bump this if RapidOCR version changes or extraction logic changes
@@ -44,15 +43,16 @@ class OCREngine:
             return logger
         _ie.get_logger = _silent_logger
 
-        providers = get_available_providers()
+        onnxruntime = importlib.import_module("onnxruntime")
+        providers = onnxruntime.get_available_providers()
         use_dml = "DmlExecutionProvider" in providers
+        RapidOCR = importlib.import_module("rapidocr_onnxruntime").RapidOCR
         if use_dml:
             print("DirectML GPU acceleration detected — enabling GPU inference")
             self._ocr = RapidOCR(det_use_dml=True, cls_use_dml=True, rec_use_dml=True)
         else:
             # Check if DirectML.dll exists but provider is hidden by CPU-only onnxruntime
-            import onnxruntime as _ort
-            _capi_dir = os.path.dirname(_ort.__file__)
+            _capi_dir = os.path.dirname(onnxruntime.__file__)
             _dml_dll = os.path.join(_capi_dir, "capi", "DirectML.dll")
             if os.path.exists(_dml_dll):
                 print("WARNING: DirectML.dll found but DmlExecutionProvider unavailable.")
@@ -187,8 +187,8 @@ class OCREngine:
             return filtered_text, filtered, cached is not None
         return all_text, all_details, cached is not None
 
+    @staticmethod
     def match_keywords(
-        self,
         full_text: str,
         keywords: List[str],
         match_logic: str = "any",
@@ -257,7 +257,6 @@ class OCREngine:
         snippets = []
         if is_match:
             lines = full_text.split('\n')
-            matched_kws_lower = {k.lower() for k in matched_kws}
             for line in lines:
                 line_stripped = line.strip()
                 if not line_stripped:
@@ -304,8 +303,8 @@ class OCREngine:
     def scan_and_organize(
         self,
         target_dir: str,
-        dest_dir: str,
         keywords: List[str],
+        dest_dir: str = "",
         match_logic: str = "any",
         recursive: bool = True,
         use_regex: bool = False,
@@ -314,6 +313,7 @@ class OCREngine:
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Generator yielding real-time scanning progress updates.
+        If dest_dir is empty, runs in preview mode (no file copying).
         """
         self.reset_cancel()
         _settings = load_settings()
@@ -338,15 +338,17 @@ class OCREngine:
             }
             return
 
-        dest_path = Path(dest_dir)
-        try:
-            dest_path.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            yield {
-                "status": "error",
-                "message": f"Failed to create or access destination directory: {str(e)}"
-            }
-            return
+        preview_mode = not dest_dir or not dest_dir.strip()
+        if not preview_mode:
+            dest_path = Path(dest_dir)
+            try:
+                dest_path.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                yield {
+                    "status": "error",
+                    "message": f"Failed to create or access destination directory: {str(e)}"
+                }
+                return
 
         processed_files = 0
         matched_files = 0
@@ -388,7 +390,9 @@ class OCREngine:
             copied_paths = []
             is_duplicate = False
             if is_match:
-                if match_logic == "all":
+                if preview_mode:
+                    matched_files += 1
+                elif match_logic == "all":
                     # AND mode: single folder named "A & B"
                     combined_name = " & ".join(matched_kws)
                     safe_folder = sanitize_folder_name(combined_name)
@@ -414,6 +418,7 @@ class OCREngine:
                 if copied_paths:
                     matched_files += 1
             
+            show_match = preview_mode and is_match
             had_copy = bool(copied_paths)
             copied_path_str = ", ".join(copied_paths) if copied_paths else None
             
@@ -427,7 +432,8 @@ class OCREngine:
                 "from_cache": from_cache,
                 "current_file": str(img_path.relative_to(target_dir)),
                 "current_full_path": str(img_path),
-                "is_match": had_copy,
+                "preview_mode": preview_mode,
+                "is_match": had_copy or show_match,
                 "match_details": {
                     "filename": img_path.name,
                     "original_path": str(img_path),
@@ -435,7 +441,7 @@ class OCREngine:
                     "is_duplicate": is_duplicate,
                     "snippets": snippets[:_max_snippets],  # Limit snippets for display brevity
                     "matched_keywords": matched_kws
-                } if had_copy else None
+                } if (had_copy or show_match) else None
             }
 
 
@@ -446,5 +452,6 @@ class OCREngine:
             "processed_files": processed_files,
             "matched_files": matched_files,
             "cached_files": cached_files,
+            "preview_mode": preview_mode,
             "message": f"Successfully completed. Processed {processed_files} images ({cached_files} from cache), found {matched_files} matches."
         }

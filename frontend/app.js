@@ -1,6 +1,7 @@
 // State Management
 let sseConnection = null;
 let matchedFiles = [];
+let maxHistoryPerDir = 5;
 let scanStats = {
     total: 0,
     processed: 0,
@@ -24,6 +25,8 @@ const elExcludeKeyword2 = document.getElementById('exclude-keyword-2');
 const elConfidenceThreshold = document.getElementById('confidence-threshold');
 const elConfidenceValue = document.getElementById('confidence-value');
 const elCacheEnabled = document.getElementById('cache-enabled');
+const elPreviewBadge = document.getElementById('preview-badge');
+const elStatsMatchLabel = document.getElementById('stat-match-label');
 
 
 const btnBrowseTarget = document.getElementById('btn-browse-target');
@@ -177,6 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load settings from backend
     fetch('/api/settings').then(r => r.json()).then(s => {
         elCacheEnabled.checked = s.enable_ocr_cache !== false;
+        maxHistoryPerDir = s.max_history_per_dir || maxHistoryPerDir;
     }).catch(() => {});
     elCacheEnabled.addEventListener('change', () => {
         fetch('/api/settings', {
@@ -448,12 +452,19 @@ function startScan() {
 
     const useRegex = elUseRegex.checked;
 
+    if (useRegex) {
+        try {
+            [...keywords, ...excludeKeywords].forEach(pattern => {
+                if (pattern) new RegExp(pattern);
+            });
+        } catch (err) {
+            showToast('Invalid regular expression: ' + err.message, 'error');
+            return;
+        }
+    }
+
     if (!targetDir) {
         showToast('Please enter or browse a target directory to scan.', 'warning');
-        return;
-    }
-    if (!destDir) {
-        showToast('Please enter or browse a destination directory.', 'warning');
         return;
     }
     if (keywords.length === 0) {
@@ -462,7 +473,14 @@ function startScan() {
     }
     // Save current paths to history
     addToHistory('target', targetDir);
-    addToHistory('dest', destDir);
+    if (destDir) {
+        addToHistory('dest', destDir);
+    }
+
+    // Preview mode indicator
+    const isPreview = !destDir;
+    elPreviewBadge.classList.toggle('hidden', !isPreview);
+    elStatsMatchLabel.textContent = isPreview ? 'Matched' : 'Matched & Copied';
 
 
     // Initialize gallery and progress bar
@@ -664,9 +682,9 @@ function addToHistory(type, path) {
     // Remove if already exists to push it to the top
     history = history.filter(item => item !== cleanPath);
     history.unshift(cleanPath);
-    // Limit to 5
-    if (history.length > 5) {
-        history = history.slice(0, 5);
+    // Limit history size by configured setting
+    if (history.length > maxHistoryPerDir) {
+        history = history.slice(0, maxHistoryPerDir);
     }
     saveHistory(type, history);
     renderHistory(type);

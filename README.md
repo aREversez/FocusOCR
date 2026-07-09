@@ -27,6 +27,7 @@ FocusOCR is a lightweight, fully offline desktop web app that scans images for t
 - **Search within results** — client-side text filter on gallery cards
 - **Light / Dark theme** — toggle button, persisted in localStorage
 - **Keyboard shortcuts** — `Ctrl+Enter` to start, `Ctrl+Shift+E` to export, `Esc` to close
+- **Preview Mode** — leave destination empty to scan without copying files
 - **Open in Explorer** — reveal files in Windows Explorer from any result card
 - **Native folder browser** — Tkinter directory dialog (reliable on Windows)
 
@@ -50,6 +51,8 @@ assets/
   icon.ico                       Multi-size .ico for the exe
 dist/
   FocusOCR.exe                   Standalone executable (no Python needed)
+venv/
+  Scripts/python.exe             Virtual environment (build isolation)
 ```
 
 ---
@@ -80,9 +83,15 @@ python main.py
 ```
 Server starts on port **9000** (falls back to 9001, 9002...).
 
-### Rebuild exe
+### Rebuild exe (venv)
 ```bash
-pyinstaller --clean FocusOCR.spec
+# Build isolation avoids onnxruntime vs onnxruntime-directml conflict
+.\venv\Scripts\pyinstaller --clean --distpath dist FocusOCR.spec
+```
+
+### Run tests
+```bash
+python -m unittest discover -s tests
 ```
 
 ---
