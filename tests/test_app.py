@@ -150,5 +150,103 @@ class TestResultsEndpoints(unittest.TestCase):
                 self.assertEqual(args[0], "xdg-open")
 
 
+class TestScanStreamLockLeak(unittest.TestCase):
+    """Regression: parameter validation failure must not acquire the scan lock."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        # Don't mock OCREngine entirely — patch only _init_ocr_engine so the
+        # real lock logic (try_acquire_scan / _scan_in_progress) is exercised.
+        self.init_patcher = patch('backend.ocr_engine.OCREngine._init_ocr_engine')
+        self.mock_init = self.init_patcher.start()
+        if 'backend.app' in sys.modules:
+            del sys.modules['backend.app']
+
+    def tearDown(self):
+        self.init_patcher.stop()
+        import shutil
+        shutil.rmtree(self._tmpdir)
+        if 'backend.app' in sys.modules:
+            del sys.modules['backend.app']
+
+    def test_invalid_match_logic_does_not_acquire_lock(self):
+        """Bad match_logic → 400; _scan_in_progress stays False."""
+        from backend.app import scan_stream, ocr_engine
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as ctx:
+            scan_stream(
+                target_dir=self._tmpdir,
+                dest_dir="",
+                keywords=["test"],
+                match_logic="invalid",
+                exclude_keywords=[]
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertFalse(ocr_engine._scan_in_progress)
+
+    def test_empty_keywords_does_not_acquire_lock(self):
+        """Empty keywords → 400; _scan_in_progress stays False."""
+        from backend.app import scan_stream, ocr_engine
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as ctx:
+            scan_stream(
+                target_dir=self._tmpdir,
+                dest_dir="",
+                keywords=[],
+                match_logic="any",
+                exclude_keywords=[]
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertFalse(ocr_engine._scan_in_progress)
+
+    def test_nonexistent_target_dir_does_not_acquire_lock(self):
+        """Missing target dir → 400; _scan_in_progress stays False."""
+        from backend.app import scan_stream, ocr_engine
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as ctx:
+            scan_stream(
+                target_dir=os.path.join(self._tmpdir, "nonexistent"),
+                dest_dir="",
+                keywords=["test"],
+                match_logic="any",
+                exclude_keywords=[]
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertFalse(ocr_engine._scan_in_progress)
+
+    def test_overlapping_dirs_does_not_acquire_lock(self):
+        """Target == dest → 400; _scan_in_progress stays False."""
+        from backend.app import scan_stream, ocr_engine
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as ctx:
+            scan_stream(
+                target_dir=self._tmpdir,
+                dest_dir=self._tmpdir,  # same as target → overlap
+                keywords=["test"],
+                match_logic="any",
+                exclude_keywords=[]
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertFalse(ocr_engine._scan_in_progress)
+
+    def test_valid_request_acquires_lock(self):
+        """A fully valid request should acquire the lock."""
+        from backend.app import scan_stream, ocr_engine
+        result = scan_stream(
+            target_dir=self._tmpdir,
+            dest_dir="",
+            keywords=["test"],
+            match_logic="any",
+            exclude_keywords=[]
+        )
+        self.assertTrue(ocr_engine._scan_in_progress)
+        ocr_engine.release_scan(ocr_engine._scan_generation)
+        self.assertFalse(ocr_engine._scan_in_progress)
+
+
 if __name__ == '__main__':
     unittest.main()
