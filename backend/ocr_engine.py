@@ -97,7 +97,6 @@ class OCREngine:
 
         providers = onnxruntime.get_available_providers()
         use_dml = "DmlExecutionProvider" in providers
-        RapidOCR = importlib.import_module("rapidocr_onnxruntime").RapidOCR
         if use_dml:
             print("DirectML GPU acceleration detected — enabling GPU inference")
             self._ocr = RapidOCR(det_use_dml=True, cls_use_dml=True, rec_use_dml=True)

@@ -298,21 +298,16 @@ def scan_stream(
     Starts the OCR scan and streams real-time updates as Server-Sent Events (SSE).
     Returns 409 Conflict if a scan is already in progress.
     """
-    if not ocr_engine.try_acquire_scan():
-        raise HTTPException(status_code=409, detail="A scan is already in progress. Wait for it to complete or cancel it first.")
-
-    _scan_gen = ocr_engine._scan_generation  # snapshot while lock is held
+    # --- Validate all inputs BEFORE acquiring the scan lock ---
+    # so that a bad request never leaks the lock.
 
     if match_logic not in ("any", "all"):
         raise HTTPException(status_code=400, detail="match_logic must be 'any' or 'all'")
 
-    # Clean keywords (frontend sends each as a separate param, no comma-splitting needed)
     clean_kws = [kw.strip() for kw in keywords if kw.strip()]
-
     if not clean_kws:
         raise HTTPException(status_code=400, detail="At least one valid keyword must be specified")
-    
-    # Clean exclusion keywords
+
     clean_ex_kws = [kw.strip() for kw in exclude_keywords if kw.strip()]
 
     target_path = Path(target_dir)
@@ -331,6 +326,12 @@ def scan_stream(
                 status_code=400,
                 detail="Target and destination directories must not overlap or contain one another."
             )
+
+    # --- All input valid — acquire the scan lock ---
+    if not ocr_engine.try_acquire_scan():
+        raise HTTPException(status_code=409, detail="A scan is already in progress. Wait for it to complete or cancel it first.")
+
+    _scan_gen = ocr_engine._scan_generation  # snapshot while lock is held
 
     def event_generator():
         try:
