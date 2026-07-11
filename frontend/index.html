@@ -279,6 +279,19 @@
                         Clear Thumb Cache
                     </button>
                 </div>
+
+                <hr class="separator">
+
+                <div style="display:flex;flex-direction:column;gap:0.4rem">
+                    <button id="btn-save-results" class="btn btn-text" style="padding:0.5rem;justify-content:flex-start;width:100%" title="Save current scan results to disk">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                        Save Results
+                    </button>
+                    <button id="btn-load-results" class="btn btn-text" style="padding:0.5rem;justify-content:flex-start;width:100%" title="Load previously saved scan results">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Load Results
+                    </button>
+                </div>
             </aside>
         </main>
     </div>
@@ -290,7 +303,10 @@
             <button class="lightbox-close" id="btn-lightbox-close">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
-            <img src="" alt="Full Preview" id="lightbox-img">
+            <div class="lightbox-image-wrapper">
+                <img src="" alt="Full Preview" id="lightbox-img">
+                <svg class="lightbox-boxes" id="lightbox-boxes"></svg>
+            </div>
             <div class="lightbox-meta">
                 <h4 id="lightbox-filename">Filename</h4>
                 <p id="lightbox-path">Path</p>

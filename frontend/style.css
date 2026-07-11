@@ -1046,6 +1046,31 @@ select:focus {
     display: block;
 }
 
+.lightbox-image-wrapper {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+}
+
+.lightbox-image-wrapper img {
+    max-height: 60vh;
+}
+
+.lightbox-boxes {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.lightbox-boxes .hl-box {
+    fill: rgba(250, 204, 21, 0.25);
+    stroke: rgba(250, 204, 21, 0.8);
+    stroke-width: 2;
+}
+
 .lightbox-close {
     position: absolute;
     top: 15px;
