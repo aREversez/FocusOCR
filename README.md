@@ -20,7 +20,8 @@ FocusOCR is a lightweight, fully offline desktop web app that scans images for t
 - **Real-time SSE progress** — live progress bar, current file display, per-card cache badge
 - **Cancel scan** — server-side cancellation stops OCR immediately
 - **GPU acceleration (DirectML)** — auto-detects GPU on Windows; install `onnxruntime-directml` to enable
-- **Duplicate detection** — files already in destination are reused and marked with a "Dup" badge
+- **Duplicate detection** — content-hash based (SHA-256) dedup catches same files even with renamed variants; marked with a "Dup" badge
+- **Scan concurrency protection** — overlapping scans return 409; stale locks from disconnected clients auto-reclaim after 60s
 - **Toast notifications** — auto-dismissing toasts replace alert() for non-blocking feedback
 - **OCR result caching** — `~/.focusocr/ocr_cache/` avoids re-scanning unchanged files; configurable toggle in UI
 - **Confidence filter** — slider (0–1) excludes low-quality OCR text from matching
@@ -53,6 +54,12 @@ dist/
   FocusOCR.exe                   Standalone executable (no Python needed)
 venv/
   Scripts/python.exe             Virtual environment (build isolation)
+.github/
+  workflows/
+    test.yml                     GitHub Actions CI (push/PR on main + dev)
+tests/
+  test_ocr_engine.py             Unit tests for OCR engine and scan lock
+  test_config.py                 Unit tests for settings validation
 ```
 
 ---
@@ -91,7 +98,7 @@ Server starts on port **9000** (falls back to 9001, 9002...).
 
 ### Run tests
 ```bash
-python -m unittest discover -s tests
+python -m unittest discover -s tests -v
 ```
 
 ---
@@ -126,9 +133,10 @@ The cache toggle and confidence slider are also available directly in the UI.
 
 ## Tech Stack
 
-- **Backend**: FastAPI + Uvicorn (Python)
+- **Backend**: FastAPI + Uvicorn + Pydantic (Python)
 - **OCR**: RapidOCR ONNX Runtime (PP-OCRv4)
 - **Images**: Pillow
 - **Dialog**: Tkinter
 - **Frontend**: Vanilla HTML5, ES6+, CSS3
+- **CI**: GitHub Actions (push/PR triggers `unittest discover`)
 - **Packaging**: PyInstaller
