@@ -250,7 +250,7 @@ function clearGallery() {
 async function clearOcrCache() {
     if (!confirm('Clear all cached OCR results? Images will be re-scanned on the next run.')) return;
     try {
-        const resp = await fetch('/api/clear-ocr-cache');
+        const resp = await fetch('/api/clear-ocr-cache', { method: 'POST' });
         const data = await resp.json();
         if (data.status === 'ok') {
             scanStats.cached = 0;
@@ -278,7 +278,7 @@ function filterResults() {
 async function clearThumbCache() {
     if (!confirm('Clear all cached thumbnails? They will be re-created when viewing results.')) return;
     try {
-        const resp = await fetch('/api/clear-thumb-cache');
+        const resp = await fetch('/api/clear-thumb-cache', { method: 'POST' });
         const data = await resp.json();
         if (data.status === 'ok') {
             updateSystemStatus(`Thumb cache cleared (${data.removed} files)`, 'green');
@@ -516,7 +516,10 @@ function startScan() {
     sseConnection.onmessage = (event) => {
         const data = JSON.parse(event.data);
         
-        if (data.status === 'starting') {
+        if (data.status === 'counting') {
+            elProgressStatus.textContent = data.message || 'Scanning directory...';
+        }
+        else if (data.status === 'starting') {
             scanStats.total = data.total_files;
             updateStatsUI();
             elProgressStatus.textContent = 'Scanning images...';
@@ -608,7 +611,7 @@ function startScan() {
 async function stopScan() {
     // Tell the server to cancel the scan
     try {
-        await fetch('/api/stop-scan');
+        await fetch('/api/stop-scan', { method: 'POST' });
     } catch (e) {
         console.error('Failed to notify server of cancellation:', e);
     }

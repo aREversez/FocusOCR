@@ -21,7 +21,7 @@ if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
 
 from .folder_picker import choose_directory
 from .ocr_engine import OCREngine, IMAGE_EXTENSIONS
-from .config import load_settings, save_settings, Settings
+from .config import load_settings, save_settings, Settings, SettingsUpdate
 
 
 def _silence_transport_reset(loop, context):
@@ -46,10 +46,10 @@ async def _setup_loop_handler():
     except RuntimeError:
         pass  # No running loop; nothing to do.
 
-# Enable CORS for local development
+# CORS restricted to localhost origins (frontend served from same origin)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost", "http://127.0.0.1"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -147,7 +147,7 @@ def get_thumbnail(path: str):
 
     return FileResponse(str(cache_file), media_type='image/webp')
 
-@app.get("/api/clear-ocr-cache")
+@app.post("/api/clear-ocr-cache")
 def clear_ocr_cache():
     """Deletes all cached OCR results."""
     try:
@@ -156,7 +156,7 @@ def clear_ocr_cache():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/clear-thumb-cache")
+@app.post("/api/clear-thumb-cache")
 def clear_thumb_cache():
     """Deletes all cached thumbnail images."""
     try:
@@ -172,12 +172,27 @@ def clear_thumb_cache():
 
 @app.get("/api/cache-stats")
 def cache_stats():
-    """Returns the number of cached OCR result files."""
+    """Returns cache statistics: OCR and thumbnail file counts and total sizes in MB."""
     from backend.config import OCR_CACHE_DIR
-    count = 0
+    ocr_count = 0
+    ocr_size = 0
     if OCR_CACHE_DIR.exists():
-        count = len(list(OCR_CACHE_DIR.glob("*.json")))
-    return {"cached_files": count}
+        for f in OCR_CACHE_DIR.glob("*.json"):
+            ocr_count += 1
+            ocr_size += f.stat().st_size
+    
+    thumb_count = 0
+    thumb_size = 0
+    if THUMB_CACHE_DIR.exists():
+        for f in THUMB_CACHE_DIR.iterdir():
+            if f.is_file():
+                thumb_count += 1
+                thumb_size += f.stat().st_size
+    
+    return {
+        "ocr_cache": {"files": ocr_count, "size_mb": round(ocr_size / (1024 * 1024), 1)},
+        "thumb_cache": {"files": thumb_count, "size_mb": round(thumb_size / (1024 * 1024), 1)}
+    }
 
 @app.get("/api/settings")
 def get_settings():
@@ -187,18 +202,17 @@ def get_settings():
     return asdict(settings)
 
 @app.post("/api/settings")
-def update_settings(data: dict):
-    """Updates application settings (partial update allowed)."""
+def update_settings(data: SettingsUpdate):
+    """Updates application settings (partial update allowed, validated by Pydantic)."""
     current = load_settings()
-    allowed = {f.name for f in __import__('dataclasses').fields(current)}
-    for key, value in data.items():
-        if key in allowed:
-            setattr(current, key, value)
+    update_data = data.model_dump(exclude_none=True)
+    for key, value in update_data.items():
+        setattr(current, key, value)
     save_settings(current)
     from dataclasses import asdict
     return {"status": "ok", "settings": asdict(current)}
 
-@app.get("/api/stop-scan")
+@app.post("/api/stop-scan")
 def stop_scan():
     """Cancels an in-progress OCR scan."""
     ocr_engine.cancel_scan()
@@ -217,7 +231,11 @@ def scan_stream(
 ):
     """
     Starts the OCR scan and streams real-time updates as Server-Sent Events (SSE).
+    Returns 409 Conflict if a scan is already in progress.
     """
+    if not ocr_engine.try_acquire_scan():
+        raise HTTPException(status_code=409, detail="A scan is already in progress. Wait for it to complete or cancel it first.")
+
     if match_logic not in ("any", "all"):
         raise HTTPException(status_code=400, detail="match_logic must be 'any' or 'all'")
 
@@ -248,6 +266,7 @@ def scan_stream(
             )
 
     def event_generator():
+        _scan_gen = ocr_engine._scan_generation  # snapshot for cleanup
         try:
             generator = ocr_engine.scan_and_organize(
                 target_dir=target_dir,
@@ -260,13 +279,10 @@ def scan_stream(
                 confidence_threshold=confidence_threshold
             )
             for event in generator:
-                try:
-                    yield f"data: {json.dumps(event)}\n\n"
-                except (BrokenPipeError, ConnectionResetError):
-                    return
+                yield f"data: {json.dumps(event)}\n\n"
                 if event.get("status") in ("complete", "cancelled", "error"):
                     break
-        except (BrokenPipeError, ConnectionResetError, GeneratorExit):
+        except GeneratorExit:
             return
         except Exception as e:
             error_event = {
@@ -274,6 +290,8 @@ def scan_stream(
                 "message": f"Scan failed due to an unexpected error: {str(e)}"
             }
             yield f"data: {json.dumps(error_event)}\n\n"
+        finally:
+            ocr_engine.release_scan(_scan_gen)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
