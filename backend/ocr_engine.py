@@ -29,7 +29,22 @@ def sanitize_folder_name(name: str) -> str:
 class OCREngine:
     def __init__(self):
         self._cancel_event = threading.Event()
+        self._scan_lock = threading.Lock()
+        self._scan_in_progress = False
         self._init_ocr_engine()
+
+    def try_acquire_scan(self) -> bool:
+        """Attempts to acquire the scan lock. Returns False if a scan is already running."""
+        with self._scan_lock:
+            if self._scan_in_progress:
+                return False
+            self._scan_in_progress = True
+            return True
+
+    def release_scan(self):
+        """Releases the scan lock."""
+        with self._scan_lock:
+            self._scan_in_progress = False
 
     def _init_ocr_engine(self):
         """Initialize RapidOCR with GPU acceleration if available."""
@@ -96,9 +111,8 @@ class OCREngine:
     def _cache_path(self, cache_key: str) -> Path:
         return OCR_CACHE_DIR / f"{cache_key}.json"
 
-    def _load_cache(self, img_path: Path) -> Optional[Tuple[str, List[Dict[str, Any]]]]:
-        settings = load_settings()
-        if not settings.enable_ocr_cache:
+    def _load_cache(self, img_path: Path, enable_ocr_cache: bool = True) -> Optional[Tuple[str, List[Dict[str, Any]]]]:
+        if not enable_ocr_cache:
             return None
         key = self._cache_key(img_path)
         cache_file = self._cache_path(key)
@@ -112,9 +126,8 @@ class OCREngine:
         except Exception:
             return None
 
-    def _save_cache(self, img_path: Path, text: str, detailed_results: List[Dict[str, Any]]) -> None:
-        settings = load_settings()
-        if not settings.enable_ocr_cache:
+    def _save_cache(self, img_path: Path, text: str, detailed_results: List[Dict[str, Any]], enable_ocr_cache: bool = True) -> None:
+        if not enable_ocr_cache:
             return
         key = self._cache_key(img_path)
         OCR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -143,7 +156,7 @@ class OCREngine:
                 count += 1
         return count
 
-    def extract_text_and_boxes(self, img_path: Path, confidence_threshold: float = 0.0) -> Tuple[str, List[Dict[str, Any]], bool]:
+    def extract_text_and_boxes(self, img_path: Path, confidence_threshold: float = 0.0, enable_ocr_cache: bool = True) -> Tuple[str, List[Dict[str, Any]], bool]:
         """
         Runs OCR on the image (or returns cached result if available).
         Cache always stores the full unfiltered result; filtering is applied
@@ -154,13 +167,14 @@ class OCREngine:
             - Boolean: True if result came from cache, False if OCR was run fresh.
         """
         # Check cache first
-        cached = self._load_cache(img_path)
+        cached = self._load_cache(img_path, enable_ocr_cache=enable_ocr_cache)
         if cached is not None:
             all_text, all_details = cached
         else:
             try:
                 result, elapse = self._ocr(str(img_path))
                 if not result:
+                    self._save_cache(img_path, "", [], enable_ocr_cache=enable_ocr_cache)
                     return "", [], False
                 all_text_lines = []
                 all_details = []
@@ -175,7 +189,7 @@ class OCREngine:
                     })
                 all_text = "\n".join(all_text_lines)
                 # Save full unfiltered result to cache
-                self._save_cache(img_path, all_text, all_details)
+                self._save_cache(img_path, all_text, all_details, enable_ocr_cache=enable_ocr_cache)
             except Exception as e:
                 print(f"Error performing OCR on {img_path}: {e}")
                 return "", [], False
@@ -221,6 +235,10 @@ class OCREngine:
             except re.error as e:
                 raise ValueError(f"Invalid regex pattern: {e}")
         
+        # Precompute lower-case forms once
+        full_text_lower = full_text.lower()
+        full_text_no_spaces = "".join(full_text_lower.split())
+        
         matched_kws = []
         for kw in valid_kws:
             if use_regex:
@@ -228,8 +246,6 @@ class OCREngine:
                     matched_kws.append(kw)
             else:
                 kw_lower = kw.lower()
-                full_text_lower = full_text.lower()
-                full_text_no_spaces = "".join(full_text_lower.split())
                 if kw_lower in full_text_lower or kw_lower in full_text_no_spaces:
                     matched_kws.append(kw)
         
@@ -249,8 +265,6 @@ class OCREngine:
                         return False, [], []
                 else:
                     ex_lower = ex_kw.lower()
-                    full_text_lower = full_text.lower()
-                    full_text_no_spaces = "".join(full_text_lower.split())
                     if ex_lower in full_text_lower or ex_lower in full_text_no_spaces:
                         return False, [], []
         
@@ -261,14 +275,15 @@ class OCREngine:
                 line_stripped = line.strip()
                 if not line_stripped:
                     continue
-                for kw_orig in matched_kws:
-                    if use_regex:
+                if use_regex:
+                    for kw_orig in matched_kws:
                         if re.search(kw_orig, line_stripped, re.IGNORECASE):
                             snippets.append(line_stripped)
                             break
-                    else:
-                        ll = line_stripped.lower()
-                        lns = "".join(ll.split())
+                else:
+                    ll = line_stripped.lower()
+                    lns = "".join(ll.split())
+                    for kw_orig in matched_kws:
                         kwl = kw_orig.lower()
                         if kwl in ll or kwl in lns:
                             snippets.append(line_stripped)
@@ -277,19 +292,34 @@ class OCREngine:
         return is_match, snippets, matched_kws
 
 
+    @staticmethod
+    def _content_hash(file_path: Path) -> str:
+        """Quick content hash using SHA-256 of first 64KB + last 64KB + file size."""
+        size = file_path.stat().st_size
+        h = hashlib.sha256()
+        h.update(str(size).encode())
+        with open(file_path, 'rb') as f:
+            head = f.read(65536)
+            h.update(head)
+            if size > 131072:
+                f.seek(-65536, os.SEEK_END)
+                tail = f.read(65536)
+                h.update(tail)
+        return h.hexdigest()
+
     def copy_file_resolve_conflict(self, src: Path, dest_dir: Path) -> Tuple[Path, bool]:
         """Copies file to dest_dir, resolving naming conflicts by appending _1, _2 etc.
-        Returns (destination_path, is_duplicate) — is_duplicate is True when an identical
-        file (same name + size) already existed and was reused instead of re-copied."""
+        Returns (destination_path, is_duplicate) — is_duplicate is True when a file with
+        the same content hash already existed and was reused instead of re-copied."""
         dest_dir.mkdir(parents=True, exist_ok=True)
         filename = src.name
         name_part = src.stem
         ext_part = src.suffix
         
         dest_file = dest_dir / filename
-        src_size = src.stat().st_size
-        # Duplicate check: same name + same size -> reuse existing file
-        if dest_file.exists() and dest_file.stat().st_size == src_size:
+        src_hash = self._content_hash(src)
+        # Duplicate check: same name + same content hash -> reuse existing file
+        if dest_file.exists() and self._content_hash(dest_file) == src_hash:
             return dest_file, True
         
         counter = 1
@@ -316,8 +346,10 @@ class OCREngine:
         If dest_dir is empty, runs in preview mode (no file copying).
         """
         self.reset_cancel()
+        yield {"status": "counting", "message": "Scanning directory for images..."}
         _settings = load_settings()
         _max_snippets = _settings.max_snippets_per_match
+        _enable_cache = _settings.enable_ocr_cache
         try:
             images = self.get_all_images(target_dir, recursive)
         except Exception as e:
@@ -377,7 +409,7 @@ class OCREngine:
             processed_files += 1
             
             # Perform OCR (or load from cache)
-            full_text, detailed_results, from_cache = self.extract_text_and_boxes(img_path, confidence_threshold=confidence_threshold)
+            full_text, detailed_results, from_cache = self.extract_text_and_boxes(img_path, confidence_threshold=confidence_threshold, enable_ocr_cache=_enable_cache)
             if from_cache:
                 cached_files += 1
             

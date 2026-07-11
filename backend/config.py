@@ -4,6 +4,7 @@ import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
+from pydantic import BaseModel
 
 DEFAULT_CONFIG_PATH = Path.home() / ".focusocr" / "config.json"
 OCR_CACHE_DIR = Path.home() / ".focusocr" / "ocr_cache"
@@ -46,3 +47,13 @@ def load_settings(path: Optional[Path] = None) -> Settings:
         return Settings(**data)
     except (json.JSONDecodeError, TypeError, ValueError):
         return Settings()
+
+
+class SettingsUpdate(BaseModel):
+    """Pydantic model for partial settings updates with type validation."""
+    host: Optional[str] = None
+    start_port: Optional[int] = None
+    ocr_confidence_threshold: Optional[float] = None
+    max_snippets_per_match: Optional[int] = None
+    max_history_per_dir: Optional[int] = None
+    enable_ocr_cache: Optional[bool] = None

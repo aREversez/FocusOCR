@@ -1,6 +1,8 @@
 import sys
+import os
 import types
 import unittest
+from pathlib import Path
 
 # Provide minimal PIL stub so tests can run in environments where Pillow is not installed.
 if 'PIL' not in sys.modules:
@@ -81,6 +83,47 @@ class TestOCREngine(unittest.TestCase):
                 use_regex=True,
                 exclude_keywords=None,
             )
+
+    def test_content_hash_same_file(self):
+        """Two references to the same file should produce the same hash."""
+        import tempfile, hashlib
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as f:
+            f.write(b'hello world ' * 10000)
+            p = f.name
+        try:
+            h1 = ocr_engine.OCREngine._content_hash(Path(p))
+            h2 = ocr_engine.OCREngine._content_hash(Path(p))
+            self.assertEqual(h1, h2)
+        finally:
+            os.unlink(p)
+
+    def test_content_hash_different_files(self):
+        """Different content should produce different hashes."""
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as f:
+            f.write(b'AAA ' * 10000)
+            p1 = f.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as f:
+            f.write(b'BBB ' * 10000)
+            p2 = f.name
+        try:
+            h1 = ocr_engine.OCREngine._content_hash(Path(p1))
+            h2 = ocr_engine.OCREngine._content_hash(Path(p2))
+            self.assertNotEqual(h1, h2)
+        finally:
+            os.unlink(p1)
+            os.unlink(p2)
+
+    def test_match_keywords_lower_precomputed(self):
+        """Precomputed lowercase optimization should match case-insensitively."""
+        text = 'UPPERCASE\nlowercase'
+        matched, snippets, kws = ocr_engine.OCREngine.match_keywords(
+            full_text=text,
+            keywords=['uppercase', 'LOWERCASE'],
+            match_logic='all',
+        )
+        self.assertTrue(matched)
+        self.assertEqual(len(kws), 2)
 
 
 if __name__ == '__main__':
