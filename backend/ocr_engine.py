@@ -79,7 +79,22 @@ class OCREngine:
             return logger
         _ie.get_logger = _silent_logger
 
-        onnxruntime = importlib.import_module("onnxruntime")
+        try:
+            onnxruntime = importlib.import_module("onnxruntime")
+        except ModuleNotFoundError:
+            raise RuntimeError(
+                "Missing required dependency: onnxruntime. "
+                "Install with: pip install onnxruntime-directml"
+            )
+
+        try:
+            RapidOCR = importlib.import_module("rapidocr_onnxruntime").RapidOCR
+        except ModuleNotFoundError:
+            raise RuntimeError(
+                "Missing required dependency: rapidocr_onnxruntime. "
+                "Install with: pip install rapidocr_onnxruntime"
+            )
+
         providers = onnxruntime.get_available_providers()
         use_dml = "DmlExecutionProvider" in providers
         RapidOCR = importlib.import_module("rapidocr_onnxruntime").RapidOCR

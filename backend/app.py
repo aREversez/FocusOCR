@@ -235,6 +235,8 @@ def list_results():
                         "date": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
                     })
                 except Exception:
+                    import traceback
+                    print(f"WARNING: Skipping corrupt result file '{f.name}': {traceback.format_exc()}")
                     continue
         return {"results": files}
     except Exception as e:
@@ -290,7 +292,7 @@ def scan_stream(
     recursive: bool = True,
     use_regex: bool = False,
     exclude_keywords: List[str] = Query([]),
-    confidence_threshold: float = 0.0
+    confidence_threshold: float = Query(0.0, ge=0.0, le=1.0)
 ):
     """
     Starts the OCR scan and streams real-time updates as Server-Sent Events (SSE).
@@ -298,6 +300,8 @@ def scan_stream(
     """
     if not ocr_engine.try_acquire_scan():
         raise HTTPException(status_code=409, detail="A scan is already in progress. Wait for it to complete or cancel it first.")
+
+    _scan_gen = ocr_engine._scan_generation  # snapshot while lock is held
 
     if match_logic not in ("any", "all"):
         raise HTTPException(status_code=400, detail="match_logic must be 'any' or 'all'")
@@ -329,7 +333,6 @@ def scan_stream(
             )
 
     def event_generator():
-        _scan_gen = ocr_engine._scan_generation  # snapshot for cleanup
         try:
             generator = ocr_engine.scan_and_organize(
                 target_dir=target_dir,

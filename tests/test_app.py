@@ -109,6 +109,46 @@ class TestResultsEndpoints(unittest.TestCase):
             self.assertEqual(result["results"][0]["total_files"], 200)
             self.assertEqual(result["results"][0]["matched_files"], 50)
 
+    @patch("subprocess.Popen")
+    @patch("backend.app.Path")
+    def test_reveal_in_explorer_windows(self, mock_path_cls, mock_popen):
+        mock_path = mock_path_cls.return_value
+        mock_path.exists.return_value = True
+        from backend.app import reveal_in_explorer
+        with patch("os.name", "nt"):
+            reveal_in_explorer("C:\\Users\\test\\image.jpg")
+            mock_popen.assert_called_once()
+            args = mock_popen.call_args[0][0]
+            self.assertEqual(args[0], "explorer")
+            self.assertEqual(args[1], "/select,")
+
+    @patch("subprocess.Popen")
+    @patch("backend.app.Path")
+    def test_reveal_in_explorer_macos(self, mock_path_cls, mock_popen):
+        mock_path = mock_path_cls.return_value
+        mock_path.exists.return_value = True
+        from backend.app import reveal_in_explorer
+        with patch("sys.platform", "darwin"):
+            with patch("os.name", "posix"):
+                reveal_in_explorer("/Users/test/image.jpg")
+                mock_popen.assert_called_once()
+                args = mock_popen.call_args[0][0]
+                self.assertEqual(args[0], "open")
+                self.assertEqual(args[1], "-R")
+
+    @patch("subprocess.Popen")
+    @patch("backend.app.Path")
+    def test_reveal_in_explorer_linux(self, mock_path_cls, mock_popen):
+        mock_path = mock_path_cls.return_value
+        mock_path.exists.return_value = True
+        from backend.app import reveal_in_explorer
+        with patch("sys.platform", "linux"):
+            with patch("os.name", "posix"):
+                reveal_in_explorer("/home/test/image.jpg")
+                mock_popen.assert_called_once()
+                args = mock_popen.call_args[0][0]
+                self.assertEqual(args[0], "xdg-open")
+
 
 if __name__ == '__main__':
     unittest.main()

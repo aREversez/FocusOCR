@@ -898,7 +898,7 @@ function renderHistory(type) {
         try {
             const parts = path.split(/[\\/]/);
             if (parts.length > 2) {
-                displayPath = '...\\' + parts[parts.length - 1];
+                displayPath = '\u2026' + (path.includes('\\') ? '\\' : '/') + parts[parts.length - 1];
             }
         } catch (e) {}
 
