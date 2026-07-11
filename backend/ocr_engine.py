@@ -27,24 +27,38 @@ def sanitize_folder_name(name: str) -> str:
 
 
 class OCREngine:
+    SCAN_LOCK_TIMEOUT = 60  # seconds without heartbeat before lock is considered stale
+
     def __init__(self):
         self._cancel_event = threading.Event()
         self._scan_lock = threading.Lock()
         self._scan_in_progress = False
+        self._scan_lock_acquired_at = 0.0
+        self._scan_heartbeat_time = 0.0
         self._init_ocr_engine()
 
     def try_acquire_scan(self) -> bool:
-        """Attempts to acquire the scan lock. Returns False if a scan is already running."""
+        """Attempts to acquire the scan lock.
+        Returns False if a scan is already running and its heartbeat is fresh.
+        If the heartbeat has timed out, the stale lock is forcefully reclaimed."""
         with self._scan_lock:
             if self._scan_in_progress:
-                return False
+                elapsed = time.time() - self._scan_heartbeat_time
+                if elapsed < self.SCAN_LOCK_TIMEOUT:
+                    return False
+                # Stale lock — reclaim
+                print(f"WARNING: Reclaiming stale scan lock (no heartbeat for {elapsed:.0f}s)")
             self._scan_in_progress = True
+            self._scan_lock_acquired_at = time.time()
+            self._scan_heartbeat_time = time.time()
             return True
 
     def release_scan(self):
         """Releases the scan lock."""
         with self._scan_lock:
             self._scan_in_progress = False
+            self._scan_lock_acquired_at = 0.0
+            self._scan_heartbeat_time = 0.0
 
     def _init_ocr_engine(self):
         """Initialize RapidOCR with GPU acceleration if available."""
@@ -317,16 +331,25 @@ class OCREngine:
         ext_part = src.suffix
         
         dest_file = dest_dir / filename
+        if not dest_file.exists():
+            shutil.copy2(src, dest_file)
+            return dest_file, False
+        
         src_hash = self._content_hash(src)
-        # Duplicate check: same name + same content hash -> reuse existing file
-        if dest_file.exists() and self._content_hash(dest_file) == src_hash:
+        # Check base filename first
+        if self._content_hash(dest_file) == src_hash:
             return dest_file, True
         
+        # Check numbered variants
         counter = 1
-        while dest_file.exists():
+        while True:
             dest_file = dest_dir / f"{name_part}_{counter}{ext_part}"
+            if not dest_file.exists():
+                break
+            if self._content_hash(dest_file) == src_hash:
+                return dest_file, True
             counter += 1
-            
+        
         shutil.copy2(src, dest_file)
         return dest_file, False
 
@@ -346,6 +369,7 @@ class OCREngine:
         If dest_dir is empty, runs in preview mode (no file copying).
         """
         self.reset_cancel()
+        self._scan_heartbeat_time = time.time()
         yield {"status": "counting", "message": "Scanning directory for images..."}
         _settings = load_settings()
         _max_snippets = _settings.max_snippets_per_match
@@ -353,6 +377,7 @@ class OCREngine:
         try:
             images = self.get_all_images(target_dir, recursive)
         except Exception as e:
+            self._scan_heartbeat_time = time.time()
             yield {
                 "status": "error",
                 "message": f"Failed to access target directory: {str(e)}"
@@ -361,6 +386,7 @@ class OCREngine:
 
         total_files = len(images)
         if total_files == 0:
+            self._scan_heartbeat_time = time.time()
             yield {
                 "status": "complete",
                 "total_files": 0,
@@ -376,6 +402,7 @@ class OCREngine:
             try:
                 dest_path.mkdir(parents=True, exist_ok=True)
             except Exception as e:
+                self._scan_heartbeat_time = time.time()
                 yield {
                     "status": "error",
                     "message": f"Failed to create or access destination directory: {str(e)}"
@@ -386,6 +413,7 @@ class OCREngine:
         matched_files = 0
         cached_files = 0
         
+        self._scan_heartbeat_time = time.time()
         yield {
             "status": "starting",
             "total_files": total_files,
@@ -395,6 +423,7 @@ class OCREngine:
         }
 
         for img_path in images:
+            self._scan_heartbeat_time = time.time()
             if self._cancel_event.is_set():
                 yield {
                     "status": "cancelled",
@@ -478,6 +507,7 @@ class OCREngine:
 
 
 
+        self._scan_heartbeat_time = time.time()
         yield {
             "status": "complete",
             "total_files": total_files,
