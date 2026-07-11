@@ -20,8 +20,9 @@ from PIL import Image
 if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
     sys.path.insert(0, sys._MEIPASS)
 
-from .folder_picker import choose_directory
 from .ocr_engine import OCREngine, IMAGE_EXTENSIONS
+# Note: folder_picker imported lazily inside browse_folder() to avoid
+# pulling in tkinter at module-import time (CI has no system tkinter).
 from .config import load_settings, save_settings, Settings, SettingsUpdate, SaveResultsPayload
 
 
@@ -65,6 +66,7 @@ def browse_folder():
     Runs in the FastAPI thread pool to avoid blocking the main async loop.
     """
     try:
+        from .folder_picker import choose_directory
         path = choose_directory()
         return {"path": path}
     except Exception as e:
@@ -213,7 +215,7 @@ def save_results(data: SaveResultsPayload):
 
 @app.get("/api/results")
 def list_results():
-    """Lists saved scan result files with metadata (reads file headers only)."""
+    """Lists saved scan result files with metadata."""
     try:
         if not RESULTS_DIR.exists():
             return {"results": []}
@@ -222,23 +224,8 @@ def list_results():
             if f.suffix == ".json" and f.stat().st_size > 0:
                 try:
                     st = f.stat()
-                    raw = f.read_bytes()
-                    head = raw[:8192]
-                    meta_start = head.find(b'"metadata"')
-                    meta = {}
-                    if meta_start >= 0:
-                        brace = head.find(b'{', meta_start)
-                        if brace >= 0:
-                            depth = 0
-                            end = brace
-                            for i in range(brace, min(len(head), brace + 4096)):
-                                if head[i:i+1] == b'{': depth += 1
-                                elif head[i:i+1] == b'}': depth -= 1
-                                if depth == 0: end = i + 1; break
-                            try:
-                                meta = json.loads(head[brace:end])
-                            except Exception:
-                                pass
+                    data = json.loads(f.read_text(encoding="utf-8"))
+                    meta = data.get("metadata", {})
                     files.append({
                         "filename": f.name,
                         "size": st.st_size,
