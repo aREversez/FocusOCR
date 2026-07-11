@@ -1046,6 +1046,31 @@ select:focus {
     display: block;
 }
 
+.lightbox-image-wrapper {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+}
+
+.lightbox-image-wrapper img {
+    max-height: 60vh;
+}
+
+.lightbox-boxes {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.lightbox-boxes .hl-box {
+    fill: rgba(250, 204, 21, 0.25);
+    stroke: rgba(250, 204, 21, 0.8);
+    stroke-width: 2;
+}
+
 .lightbox-close {
     position: absolute;
     top: 15px;
@@ -1092,6 +1117,93 @@ select:focus {
     border: 1px solid rgba(255,255,255,0.04);
     max-height: 120px;
     overflow-y: auto;
+}
+
+/* Load Results Modal */
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+}
+
+.modal-content {
+    position: relative;
+    background: var(--card-bg);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    width: 90%;
+    max-width: 520px;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-family: var(--font-heading);
+    font-size: 1rem;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 4px;
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+    background: rgba(255,255,255,0.06);
+}
+
+.modal-body {
+    overflow-y: auto;
+    padding: 0.5rem;
+}
+
+.modal-body .result-item {
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+
+.modal-body .result-item:hover {
+    background: rgba(255,255,255,0.06);
+}
+
+[data-theme="light"] .modal-content {
+    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+}
+
+[data-theme="light"] .modal-close:hover {
+    background: rgba(0,0,0,0.06);
+}
+
+[data-theme="light"] .modal-body .result-item:hover {
+    background: rgba(0,0,0,0.04);
 }
 
 /* Right sidebar */

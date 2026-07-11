@@ -36,6 +36,8 @@ const btnStopScan = document.getElementById('btn-stop-scan');
 const btnClearResults = document.getElementById('btn-clear-results');
 const btnClearCache = document.getElementById('btn-clear-cache');
 const btnClearThumbCache = document.getElementById('btn-clear-thumb-cache');
+const btnSaveResults = document.getElementById('btn-save-results');
+const btnLoadResults = document.getElementById('btn-load-results');
 const btnExport = document.getElementById('btn-export');
 const elExportMenu = document.getElementById('export-menu');
 
@@ -82,31 +84,61 @@ function toggleTheme() {
     applyTheme(current === 'dark' ? 'light' : 'dark');
 }
 
+function escapeCSV(value) {
+    const s = String(value == null ? '' : value);
+    return '"' + s.replace(/"/g, '""') + '"';
+}
+
 // Export matched results as CSV or JSON
 function exportResults(format) {
     if (matchedFiles.length === 0) return;
-    let content, filename, mime;
     if (format === 'csv') {
-        content = '\ufeff' + 'filename,path,keywords,snippets\n' +
-            matchedFiles.map(m =>
-                `"${m.filename}","${m.original_path}","${(m.matched_keywords||[]).join('; ')}","${(m.snippets||[]).join(' | ')}"`
+        const header = '\ufeff' + ['filename','path','keywords','snippets','boxes'].join(',') + '\n';
+        const CHUNK = 500;
+        const parts = [header];
+        for (let i = 0; i < matchedFiles.length; i += CHUNK) {
+            const chunk = matchedFiles.slice(i, i + CHUNK).map(m =>
+                [
+                    escapeCSV(m.filename),
+                    escapeCSV(m.original_path),
+                    escapeCSV((m.matched_keywords||[]).join('; ')),
+                    escapeCSV((m.snippets||[]).join(' | ')),
+                    escapeCSV(JSON.stringify(m.boxes||[]))
+                ].join(',')
             ).join('\n');
-        filename = 'focusocr_results.csv';
-        mime = 'text/csv;charset=utf-8';
+            parts.push(chunk);
+            parts.push('\n');
+        }
+        const blob = new Blob(parts, { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'focusocr_results.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     } else {
-        content = JSON.stringify(matchedFiles, null, 2);
-        filename = 'focusocr_results.json';
-        mime = 'application/json';
+        const CHUNK = 500;
+        const parts = ['[\n'];
+        for (let i = 0; i < matchedFiles.length; i += CHUNK) {
+            const chunk = matchedFiles.slice(i, i + CHUNK)
+                .map(m => JSON.stringify(m, null, 2))
+                .join(',\n');
+            parts.push(chunk);
+            if (i + CHUNK < matchedFiles.length) parts.push(',\n');
+        }
+        parts.push('\n]');
+        const blob = new Blob(parts, { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'focusocr_results.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
-    const blob = new Blob([content], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
 }
 
 
@@ -125,6 +157,8 @@ document.addEventListener('DOMContentLoaded', () => {
     btnClearResults.addEventListener('click', clearGallery);
     btnClearCache.addEventListener('click', clearOcrCache);
     btnClearThumbCache.addEventListener('click', clearThumbCache);
+    btnSaveResults.addEventListener('click', saveResults);
+    btnLoadResults.addEventListener('click', loadResultsList);
     
     // Lightbox close events
     elLightboxClose.addEventListener('click', closeLightbox);
@@ -286,6 +320,122 @@ async function clearThumbCache() {
         }
     } catch (e) {
         showToast('Failed to clear thumbnail cache: ' + e.message, 'error');
+    }
+}
+
+async function saveResults() {
+    if (matchedFiles.length === 0) {
+        showToast('No results to save. Run a scan first.', 'warning');
+        return;
+    }
+    const keywords = [];
+    document.querySelectorAll('.keyword-input').forEach(el => {
+        const v = el.value.trim();
+        if (v) keywords.push(v);
+    });
+    const payload = {
+        matches: matchedFiles.map(m => JSON.parse(JSON.stringify(m))),
+        metadata: {
+            total_files: scanStats.total,
+            processed_files: scanStats.processed,
+            matched_files: scanStats.matches,
+            cached_files: scanStats.cached,
+            keywords: keywords,
+            match_logic: elMatchLogic.value,
+            timestamp: Date.now()
+        }
+    };
+    try {
+        const resp = await fetch('/api/save-results', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        if (resp.ok && data.status === 'ok') {
+            showToast(`Results saved as ${data.filename}`, 'success');
+        } else {
+            showToast('Failed to save results: ' + (data.detail || 'unknown error'), 'error');
+        }
+    } catch (e) {
+        showToast('Failed to save results: ' + e.message, 'error');
+    }
+}
+
+async function loadResultsList() {
+    try {
+        const resp = await fetch('/api/results');
+        if (!resp.ok) {
+            showToast('Failed to load results list', 'error');
+            return;
+        }
+        const data = await resp.json();
+        if (!data.results || data.results.length === 0) {
+            showToast('No saved results found.', 'info');
+            return;
+        }
+        showLoadResultsModal(data.results);
+    } catch (e) {
+        showToast('Failed to load results list: ' + e.message, 'error');
+    }
+}
+
+function showLoadResultsModal(results) {
+    const modal = document.getElementById('load-results-modal');
+    const list = document.getElementById('load-results-list');
+    list.innerHTML = '';
+    results.slice(0, 50).forEach((r, i) => {
+        const item = document.createElement('button');
+        item.className = 'btn btn-text result-item';
+        item.style.cssText = 'padding:0.6rem;text-align:left;width:100%;border-bottom:1px solid var(--border-color)';
+        item.textContent = `${i+1}. ${r.date} — ${r.matched_files} matches / ${r.total_files} files`;
+        item.addEventListener('click', () => {
+            modal.classList.add('hidden');
+            loadResultFile(r.filename);
+        });
+        list.appendChild(item);
+    });
+    modal.classList.remove('hidden');
+}
+
+async function loadResultFile(filename) {
+    try {
+        const resp = await fetch(`/api/results/${encodeURIComponent(filename)}`);
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            showToast('Failed to load result: ' + (data.detail || resp.statusText), 'error');
+            return;
+        }
+        const data = await resp.json();
+        if (!data.matches || !data.matches.length) {
+            showToast('No matches found in saved result.', 'warning');
+            return;
+        }
+        // Restore matches and stats
+        matchedFiles = data.matches;
+        scanStats = {
+            total: data.metadata?.total_files || 0,
+            processed: data.metadata?.processed_files || 0,
+            matches: data.metadata?.matched_files || 0,
+            cached: data.metadata?.cached_files || 0
+        };
+        updateStatsUI();
+        elResultsGrid.innerHTML = '';
+        elResultsGrid.classList.remove('hidden');
+        elEmptyState.classList.add('hidden');
+        elResultsFilter.classList.remove('hidden');
+        // Rebuild gallery
+        const kws = data.metadata?.keywords || [];
+        for (const match of matchedFiles) {
+            addMatchToGallery(match, kws, false);
+        }
+        elGalleryCount.textContent = matchedFiles.length;
+        elGalleryCount.classList.remove('hidden');
+        updateExportButton();
+        updateSystemStatus(`Loaded ${filename}`, 'green');
+        setTimeout(() => updateSystemStatus('Ready', 'green'), 3000);
+    } catch (e) {
+        showToast('Failed to load result: ' + e.message, 'error');
     }
 }
 
@@ -648,6 +798,29 @@ function openLightbox(match, keywords) {
         `<div class="snippet-line" style="margin-bottom: 0.5rem;">${highlightText(snippet, keywords)}</div>`
     ).join('');
     
+    // Render bounding box overlay when image loads
+    const boxesSvg = document.getElementById('lightbox-boxes');
+    boxesSvg.innerHTML = '';
+    if (match.boxes && match.boxes.length > 0) {
+        elLightboxImg.onload = function() {
+            const img = elLightboxImg;
+            const natW = img.naturalWidth;
+            const natH = img.naturalHeight;
+            const dispW = img.clientWidth || img.width;
+            const dispH = img.clientHeight || img.height;
+            const sx = dispW / natW;
+            const sy = dispH / natH;
+            let polygons = '';
+            for (const box of match.boxes) {
+                if (!box || box.length < 4) continue;
+                const pts = box.map(p => `${(p[0] * sx).toFixed(1)},${(p[1] * sy).toFixed(1)}`).join(' ');
+                polygons += `<polygon class="hl-box" points="${pts}"/>`;
+            }
+            boxesSvg.setAttribute('viewBox', `0 0 ${dispW} ${dispH}`);
+            boxesSvg.innerHTML = polygons;
+        };
+    }
+    
     elLightbox.classList.remove('hidden');
     document.body.style.overflow = 'hidden'; // Lock background scroll
 }
@@ -655,6 +828,8 @@ function openLightbox(match, keywords) {
 function closeLightbox() {
     elLightbox.classList.add('hidden');
     elLightboxImg.src = '';
+    elLightboxImg.onload = null;
+    document.getElementById('lightbox-boxes').innerHTML = '';
     document.body.style.overflow = ''; // Unlock scroll
 }
 

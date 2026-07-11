@@ -454,7 +454,15 @@ class OCREngine:
                 full_text, keywords, match_logic,
                 use_regex=use_regex, exclude_keywords=exclude_keywords
             )
-            
+
+            # Extract bounding boxes for matched snippets
+            matched_boxes = []
+            if is_match and detailed_results:
+                snippet_texts = set(s.strip() for s in snippets)
+                for detail in detailed_results:
+                    if detail["text"].strip() in snippet_texts:
+                        matched_boxes.append(detail["box"])
+
             copied_paths = []
             is_duplicate = False
             if is_match:
@@ -508,7 +516,8 @@ class OCREngine:
                     "copied_path": copied_path_str,
                     "is_duplicate": is_duplicate,
                     "snippets": snippets[:_max_snippets],  # Limit snippets for display brevity
-                    "matched_keywords": matched_kws
+                    "matched_keywords": matched_kws,
+                    "boxes": matched_boxes[:_max_snippets]
                 } if (had_copy or show_match) else None
             }
 

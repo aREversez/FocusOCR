@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import subprocess
 import urllib.parse
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 from fastapi import FastAPI, Query, HTTPException
@@ -19,9 +20,10 @@ from PIL import Image
 if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
     sys.path.insert(0, sys._MEIPASS)
 
-from .folder_picker import choose_directory
 from .ocr_engine import OCREngine, IMAGE_EXTENSIONS
-from .config import load_settings, save_settings, Settings, SettingsUpdate
+# Note: folder_picker imported lazily inside browse_folder() to avoid
+# pulling in tkinter at module-import time (CI has no system tkinter).
+from .config import load_settings, save_settings, Settings, SettingsUpdate, SaveResultsPayload
 
 
 def _silence_transport_reset(loop, context):
@@ -64,6 +66,7 @@ def browse_folder():
     Runs in the FastAPI thread pool to avoid blocking the main async loop.
     """
     try:
+        from .folder_picker import choose_directory
         path = choose_directory()
         return {"path": path}
     except Exception as e:
@@ -193,6 +196,66 @@ def cache_stats():
         "ocr_cache": {"files": ocr_count, "size_mb": round(ocr_size / (1024 * 1024), 1)},
         "thumb_cache": {"files": thumb_count, "size_mb": round(thumb_size / (1024 * 1024), 1)}
     }
+
+RESULTS_DIR = Path.home() / ".focusocr" / "results"
+
+@app.post("/api/save-results")
+def save_results(data: SaveResultsPayload):
+    """Persists scan results to disk as a JSON file."""
+    try:
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"scan_{timestamp}.json"
+        (RESULTS_DIR / filename).write_text(
+            json.dumps(data.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return {"status": "ok", "filename": filename}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/results")
+def list_results():
+    """Lists saved scan result files with metadata."""
+    try:
+        if not RESULTS_DIR.exists():
+            return {"results": []}
+        files = []
+        for f in sorted(RESULTS_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            if f.suffix == ".json" and f.stat().st_size > 0:
+                try:
+                    st = f.stat()
+                    data = json.loads(f.read_text(encoding="utf-8"))
+                    meta = data.get("metadata", {})
+                    files.append({
+                        "filename": f.name,
+                        "size": st.st_size,
+                        "modified": st.st_mtime,
+                        "total_files": meta.get("total_files", 0),
+                        "matched_files": meta.get("matched_files", 0),
+                        "date": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                    })
+                except Exception:
+                    continue
+        return {"results": files}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/results/{filename}")
+def get_result(filename: str):
+    """Returns a saved scan result by filename. Resistant to path traversal."""
+    safe_name = Path(filename).name
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    try:
+        file_path = RESULTS_DIR / safe_name
+        if not file_path.exists() or not file_path.is_file():
+            raise HTTPException(status_code=404, detail="Result file not found")
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/settings")
 def get_settings():
