@@ -33,6 +33,8 @@ class OCREngine:
         self._cancel_event = threading.Event()
         self._scan_lock = threading.Lock()
         self._scan_in_progress = False
+        self._scan_lock_generation = 0
+        self._scan_generation = 0
         self._scan_lock_acquired_at = 0.0
         self._scan_heartbeat_time = 0.0
         self._init_ocr_engine()
@@ -49,13 +51,18 @@ class OCREngine:
                 # Stale lock — reclaim
                 print(f"WARNING: Reclaiming stale scan lock (no heartbeat for {elapsed:.0f}s)")
             self._scan_in_progress = True
+            self._scan_lock_generation += 1
+            self._scan_generation = self._scan_lock_generation
             self._scan_lock_acquired_at = time.time()
             self._scan_heartbeat_time = time.time()
             return True
 
-    def release_scan(self):
-        """Releases the scan lock."""
+    def release_scan(self, generation: int):
+        """Releases the scan lock. Only acts if generation matches the current
+        lock generation — stale calls from abandoned generators are ignored."""
         with self._scan_lock:
+            if generation != self._scan_lock_generation:
+                return
             self._scan_in_progress = False
             self._scan_lock_acquired_at = 0.0
             self._scan_heartbeat_time = 0.0

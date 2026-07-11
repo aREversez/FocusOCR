@@ -191,29 +191,42 @@ class TestCopyFileResolveConflict(unittest.TestCase):
 
 class TestScanLock(unittest.TestCase):
     def setUp(self):
-        # Minimal engine with just lock state
         self.engine = ocr_engine.OCREngine.__new__(ocr_engine.OCREngine)
         self.engine._scan_lock = threading.Lock()
         self.engine._scan_in_progress = False
+        self.engine._scan_lock_generation = 0
+        self.engine._scan_generation = 0
         self.engine._scan_lock_acquired_at = 0.0
         self.engine._scan_heartbeat_time = 0.0
 
     def test_acquire_release(self):
         self.assertTrue(self.engine.try_acquire_scan())
-        self.engine.release_scan()
+        gen = self.engine._scan_generation
+        self.engine.release_scan(gen)
         self.assertTrue(self.engine.try_acquire_scan())
 
     def test_double_acquire_returns_false(self):
         self.assertTrue(self.engine.try_acquire_scan())
+        gen1 = self.engine._scan_generation
         self.assertFalse(self.engine.try_acquire_scan())
-        self.engine.release_scan()
+        self.engine.release_scan(gen1)
         self.assertTrue(self.engine.try_acquire_scan())
 
     def test_stale_lock_reclaimed(self):
         self.assertTrue(self.engine.try_acquire_scan())
+        gen1 = self.engine._scan_generation
         # Simulate stale heartbeat
         self.engine._scan_heartbeat_time = time.time() - ocr_engine.OCREngine.SCAN_LOCK_TIMEOUT - 10
-        # Should reclaim
+        # Should reclaim (bumps generation)
+        self.assertTrue(self.engine.try_acquire_scan())
+        gen2 = self.engine._scan_generation
+        self.assertNotEqual(gen1, gen2)
+        # Old gen release should be ignored
+        self.engine.release_scan(gen1)
+        # Lock should still be held (gen2 is current)
+        self.assertFalse(self.engine.try_acquire_scan())
+        # Proper release with current gen
+        self.engine.release_scan(gen2)
         self.assertTrue(self.engine.try_acquire_scan())
 
 

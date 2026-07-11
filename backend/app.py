@@ -266,6 +266,7 @@ def scan_stream(
             )
 
     def event_generator():
+        _scan_gen = ocr_engine._scan_generation  # snapshot for cleanup
         try:
             generator = ocr_engine.scan_and_organize(
                 target_dir=target_dir,
@@ -290,7 +291,7 @@ def scan_stream(
             }
             yield f"data: {json.dumps(error_event)}\n\n"
         finally:
-            ocr_engine.release_scan()
+            ocr_engine.release_scan(_scan_gen)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
