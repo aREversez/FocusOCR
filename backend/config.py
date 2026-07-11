@@ -3,7 +3,7 @@ import os
 import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any, List
 from pydantic import BaseModel
 
 DEFAULT_CONFIG_PATH = Path.home() / ".focusocr" / "config.json"
@@ -57,3 +57,9 @@ class SettingsUpdate(BaseModel):
     max_snippets_per_match: Optional[int] = None
     max_history_per_dir: Optional[int] = None
     enable_ocr_cache: Optional[bool] = None
+
+
+class SaveResultsPayload(BaseModel):
+    """Pydantic model for saving scan results."""
+    matches: List[Dict[str, Any]]
+    metadata: Optional[Dict[str, Any]] = None

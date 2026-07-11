@@ -22,7 +22,7 @@ if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
 
 from .folder_picker import choose_directory
 from .ocr_engine import OCREngine, IMAGE_EXTENSIONS
-from .config import load_settings, save_settings, Settings, SettingsUpdate
+from .config import load_settings, save_settings, Settings, SettingsUpdate, SaveResultsPayload
 
 
 def _silence_transport_reset(loop, context):
@@ -198,14 +198,14 @@ def cache_stats():
 RESULTS_DIR = Path.home() / ".focusocr" / "results"
 
 @app.post("/api/save-results")
-def save_results(data: dict):
+def save_results(data: SaveResultsPayload):
     """Persists scan results to disk as a JSON file."""
     try:
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"scan_{timestamp}.json"
         (RESULTS_DIR / filename).write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps(data.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8"
         )
         return {"status": "ok", "filename": filename}
     except Exception as e:
@@ -213,22 +213,38 @@ def save_results(data: dict):
 
 @app.get("/api/results")
 def list_results():
-    """Lists saved scan result files with metadata."""
+    """Lists saved scan result files with metadata (reads file headers only)."""
     try:
         if not RESULTS_DIR.exists():
             return {"results": []}
         files = []
         for f in sorted(RESULTS_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-            if f.suffix == ".json":
+            if f.suffix == ".json" and f.stat().st_size > 0:
                 try:
                     st = f.stat()
-                    data = json.loads(f.read_text(encoding="utf-8"))
+                    raw = f.read_bytes()
+                    head = raw[:8192]
+                    meta_start = head.find(b'"metadata"')
+                    meta = {}
+                    if meta_start >= 0:
+                        brace = head.find(b'{', meta_start)
+                        if brace >= 0:
+                            depth = 0
+                            end = brace
+                            for i in range(brace, min(len(head), brace + 4096)):
+                                if head[i:i+1] == b'{': depth += 1
+                                elif head[i:i+1] == b'}': depth -= 1
+                                if depth == 0: end = i + 1; break
+                            try:
+                                meta = json.loads(head[brace:end])
+                            except Exception:
+                                pass
                     files.append({
                         "filename": f.name,
                         "size": st.st_size,
                         "modified": st.st_mtime,
-                        "total_files": data.get("metadata", {}).get("total_files", 0),
-                        "matched_files": data.get("metadata", {}).get("matched_files", 0),
+                        "total_files": meta.get("total_files", 0),
+                        "matched_files": meta.get("matched_files", 0),
                         "date": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
                     })
                 except Exception:
@@ -239,9 +255,12 @@ def list_results():
 
 @app.get("/api/results/{filename}")
 def get_result(filename: str):
-    """Returns a saved scan result by filename."""
+    """Returns a saved scan result by filename. Resistant to path traversal."""
+    safe_name = Path(filename).name
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
     try:
-        file_path = RESULTS_DIR / filename
+        file_path = RESULTS_DIR / safe_name
         if not file_path.exists() or not file_path.is_file():
             raise HTTPException(status_code=404, detail="Result file not found")
         data = json.loads(file_path.read_text(encoding="utf-8"))

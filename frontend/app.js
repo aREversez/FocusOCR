@@ -84,16 +84,27 @@ function toggleTheme() {
     applyTheme(current === 'dark' ? 'light' : 'dark');
 }
 
+function escapeCSV(value) {
+    const s = String(value == null ? '' : value);
+    return '"' + s.replace(/"/g, '""') + '"';
+}
+
 // Export matched results as CSV or JSON
 function exportResults(format) {
     if (matchedFiles.length === 0) return;
     if (format === 'csv') {
-        const header = '\ufefffilename,path,keywords,snippets,boxes\n';
+        const header = '\ufeff' + ['filename','path','keywords','snippets','boxes'].join(',') + '\n';
         const CHUNK = 500;
         const parts = [header];
         for (let i = 0; i < matchedFiles.length; i += CHUNK) {
             const chunk = matchedFiles.slice(i, i + CHUNK).map(m =>
-                `"${m.filename}","${m.original_path}","${(m.matched_keywords||[]).join('; ')}","${(m.snippets||[]).join(' | ')}","${JSON.stringify(m.boxes||[]).replace(/"/g, '""')}"`
+                [
+                    escapeCSV(m.filename),
+                    escapeCSV(m.original_path),
+                    escapeCSV((m.matched_keywords||[]).join('; ')),
+                    escapeCSV((m.snippets||[]).join(' | ')),
+                    escapeCSV(JSON.stringify(m.boxes||[]))
+                ].join(',')
             ).join('\n');
             parts.push(chunk);
             parts.push('\n');
@@ -341,8 +352,10 @@ async function saveResults() {
             body: JSON.stringify(payload)
         });
         const data = await resp.json();
-        if (data.status === 'ok') {
+        if (resp.ok && data.status === 'ok') {
             showToast(`Results saved as ${data.filename}`, 'success');
+        } else {
+            showToast('Failed to save results: ' + (data.detail || 'unknown error'), 'error');
         }
     } catch (e) {
         showToast('Failed to save results: ' + e.message, 'error');
@@ -352,33 +365,49 @@ async function saveResults() {
 async function loadResultsList() {
     try {
         const resp = await fetch('/api/results');
+        if (!resp.ok) {
+            showToast('Failed to load results list', 'error');
+            return;
+        }
         const data = await resp.json();
         if (!data.results || data.results.length === 0) {
             showToast('No saved results found.', 'info');
             return;
         }
-        // Build a simple selection prompt
-        const lines = data.results.slice(0, 20).map((r, i) =>
-            `${i+1}. ${r.date} — ${r.matched_files} matches from ${r.total_files} files`
-        ).join('\n');
-        const choice = prompt(`Saved results:\n${lines}\n\nEnter number to load (or Cancel):`);
-        if (!choice) return;
-        const idx = parseInt(choice, 10) - 1;
-        if (isNaN(idx) || idx < 0 || idx >= data.results.length) {
-            showToast('Invalid selection.', 'error');
-            return;
-        }
-        await loadResultFile(data.results[idx].filename);
+        showLoadResultsModal(data.results);
     } catch (e) {
         showToast('Failed to load results list: ' + e.message, 'error');
     }
 }
 
+function showLoadResultsModal(results) {
+    const modal = document.getElementById('load-results-modal');
+    const list = document.getElementById('load-results-list');
+    list.innerHTML = '';
+    results.slice(0, 50).forEach((r, i) => {
+        const item = document.createElement('button');
+        item.className = 'btn btn-text result-item';
+        item.style.cssText = 'padding:0.6rem;text-align:left;width:100%;border-bottom:1px solid var(--border-color)';
+        item.textContent = `${i+1}. ${r.date} — ${r.matched_files} matches / ${r.total_files} files`;
+        item.addEventListener('click', () => {
+            modal.classList.add('hidden');
+            loadResultFile(r.filename);
+        });
+        list.appendChild(item);
+    });
+    modal.classList.remove('hidden');
+}
+
 async function loadResultFile(filename) {
     try {
         const resp = await fetch(`/api/results/${encodeURIComponent(filename)}`);
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            showToast('Failed to load result: ' + (data.detail || resp.statusText), 'error');
+            return;
+        }
         const data = await resp.json();
-        if (!data.matches) {
+        if (!data.matches || !data.matches.length) {
             showToast('No matches found in saved result.', 'warning');
             return;
         }
