@@ -149,6 +149,49 @@ class TestResultsEndpoints(unittest.TestCase):
                 args = mock_popen.call_args[0][0]
                 self.assertEqual(args[0], "xdg-open")
 
+    def test_delete_result_normal(self):
+        from backend.app import RESULTS_DIR
+        with patch("backend.app.RESULTS_DIR", self.results_dir):
+            from backend.app import delete_result
+            self._save_result("todelete.json", {"matches": [], "metadata": {}})
+            result = delete_result("todelete.json")
+            self.assertEqual(result["status"], "ok")
+            self.assertFalse((self.results_dir / "todelete.json").exists())
+
+    def test_delete_result_nonexistent(self):
+        from backend.app import RESULTS_DIR
+        with patch("backend.app.RESULTS_DIR", self.results_dir):
+            from backend.app import delete_result
+            from fastapi import HTTPException
+            with self.assertRaises(HTTPException) as ctx:
+                delete_result("nope.json")
+            self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_delete_result_path_traversal(self):
+        from backend.app import RESULTS_DIR
+        with patch("backend.app.RESULTS_DIR", self.results_dir):
+            from backend.app import delete_result
+            from fastapi import HTTPException
+            with self.assertRaises(HTTPException) as ctx:
+                delete_result("../secret.txt")
+            self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_save_results_respects_max_saved(self):
+        from backend.app import RESULTS_DIR
+        with patch("backend.app.RESULTS_DIR", self.results_dir):
+            from backend.app import save_results, SaveResultsPayload
+
+            # Save 22 results; with default max_saved_results=20, only 20 should remain
+            for i in range(22):
+                payload = SaveResultsPayload(
+                    matches=[{"filename": f"img_{i}.jpg"}],
+                    metadata={"total_files": i + 1}
+                )
+                save_results(payload)
+
+            remaining = sorted(self.results_dir.glob("scan_*.json"))
+            self.assertLessEqual(len(remaining), 20)
+
 
 class TestScanStreamLockLeak(unittest.TestCase):
     """Regression: parameter validation failure must not acquire the scan lock."""

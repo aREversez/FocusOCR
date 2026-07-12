@@ -192,9 +192,18 @@ def cache_stats():
                 thumb_count += 1
                 thumb_size += f.stat().st_size
     
+    results_count = 0
+    results_size = 0
+    if RESULTS_DIR.exists():
+        for f in RESULTS_DIR.glob("*.json"):
+            if f.is_file():
+                results_count += 1
+                results_size += f.stat().st_size
+    
     return {
         "ocr_cache": {"files": ocr_count, "size_mb": round(ocr_size / (1024 * 1024), 1)},
-        "thumb_cache": {"files": thumb_count, "size_mb": round(thumb_size / (1024 * 1024), 1)}
+        "thumb_cache": {"files": thumb_count, "size_mb": round(thumb_size / (1024 * 1024), 1)},
+        "results": {"files": results_count, "size_mb": round(results_size / (1024 * 1024), 1)}
     }
 
 RESULTS_DIR = Path.home() / ".focusocr" / "results"
@@ -209,6 +218,19 @@ def save_results(data: SaveResultsPayload):
         (RESULTS_DIR / filename).write_text(
             json.dumps(data.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8"
         )
+
+        # Enforce max_saved_results — delete the oldest files if over limit
+        from backend.config import load_settings
+        settings = load_settings()
+        max_saved = settings.max_saved_results
+        all_files = sorted(
+            [f for f in RESULTS_DIR.glob("scan_*.json") if f.is_file()],
+            key=lambda p: p.stat().st_mtime
+        )
+        while len(all_files) > max_saved:
+            oldest = all_files.pop(0)
+            oldest.unlink(missing_ok=True)
+
         return {"status": "ok", "filename": filename}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -254,6 +276,23 @@ def get_result(filename: str):
             raise HTTPException(status_code=404, detail="Result file not found")
         data = json.loads(file_path.read_text(encoding="utf-8"))
         return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/results/{filename}")
+def delete_result(filename: str):
+    """Deletes a saved scan result by filename. Resistant to path traversal."""
+    safe_name = Path(filename).name
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    try:
+        file_path = RESULTS_DIR / safe_name
+        if not file_path.exists() or not file_path.is_file():
+            raise HTTPException(status_code=404, detail="Result file not found")
+        file_path.unlink()
+        return {"status": "ok", "filename": safe_name}
     except HTTPException:
         raise
     except Exception as e:
