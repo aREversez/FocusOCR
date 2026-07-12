@@ -24,6 +24,8 @@ FocusOCR is a lightweight, fully offline desktop web app that scans images for t
 - **Scan concurrency protection** — overlapping scans return 409; stale locks from disconnected clients auto-reclaim after 60s
 - **Toast notifications** — auto-dismissing toasts replace alert() for non-blocking feedback
 - **OCR result caching** — `~/.focusocr/ocr_cache/` avoids re-scanning unchanged files; configurable toggle in UI
+- **Scan result persistence** — save/load results to `~/.focusocr/results/`; auto-pruned to 20 files; each deletable from the Load Results modal
+- **Bounding box overlay** — lightbox highlights exactly which text regions matched, mapped by line index (not text content) to avoid duplicate highlights on repeated text
 - **Confidence filter** — slider (0–1) excludes low-quality OCR text from matching
 - **Search within results** — client-side text filter on gallery cards
 - **Light / Dark theme** — toggle button, persisted in localStorage
@@ -60,6 +62,7 @@ venv/
 tests/
   test_ocr_engine.py             Unit tests for OCR engine and scan lock
   test_config.py                 Unit tests for settings validation
+  test_app.py                    Unit tests for API endpoints (results, reveal, lock leak)
 ```
 
 ---
@@ -114,6 +117,7 @@ Settings stored in `~/.focusocr/config.json`:
   "ocr_confidence_threshold": 0.0,
   "max_snippets_per_match": 3,
   "max_history_per_dir": 5,
+  "max_saved_results": 20,
   "enable_ocr_cache": true
 }
 ```
@@ -125,6 +129,7 @@ Settings stored in `~/.focusocr/config.json`:
 | `ocr_confidence_threshold` | `0.0` | Minimum confidence (0–1) to include text |
 | `max_snippets_per_match` | `3` | Snippets shown per match in gallery |
 | `max_history_per_dir` | `5` | Recent directories remembered |
+| `max_saved_results` | `20` | Max result files kept in `~/.focusocr/results/` |
 | `enable_ocr_cache` | `true` | Skip re-scan of unchanged files |
 
 The cache toggle and confidence slider are also available directly in the UI.

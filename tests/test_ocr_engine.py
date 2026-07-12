@@ -26,7 +26,7 @@ class TestOCREngine(unittest.TestCase):
 
     def test_match_keywords_plain_any(self):
         text = 'Hello world\nThis is a test document.'
-        matched, snippets, kws = ocr_engine.OCREngine.match_keywords(
+        matched, snippets, kws, indices = ocr_engine.OCREngine.match_keywords(
             full_text=text,
             keywords=['hello', 'test'],
             match_logic='any',
@@ -36,10 +36,11 @@ class TestOCREngine(unittest.TestCase):
         self.assertTrue(matched)
         self.assertEqual(set(kws), {'hello', 'test'})
         self.assertIn('Hello world', snippets)
+        self.assertEqual(indices, [0, 1])
 
     def test_match_keywords_plain_all(self):
         text = 'One two three\nFour five six'
-        matched, snippets, kws = ocr_engine.OCREngine.match_keywords(
+        matched, snippets, kws, indices = ocr_engine.OCREngine.match_keywords(
             full_text=text,
             keywords=['one', 'six'],
             match_logic='all',
@@ -49,10 +50,11 @@ class TestOCREngine(unittest.TestCase):
         self.assertTrue(matched)
         self.assertEqual(set(kws), {'one', 'six'})
         self.assertEqual(len(snippets), 2)
+        self.assertEqual(indices, [0, 1])
 
     def test_match_keywords_regex(self):
         text = 'Invoice 12345\nAmount: $99.99'
-        matched, snippets, kws = ocr_engine.OCREngine.match_keywords(
+        matched, snippets, kws, indices = ocr_engine.OCREngine.match_keywords(
             full_text=text,
             keywords=[r'Invoice\s+\d+'],
             match_logic='any',
@@ -62,10 +64,11 @@ class TestOCREngine(unittest.TestCase):
         self.assertTrue(matched)
         self.assertEqual(kws, [r'Invoice\s+\d+'])
         self.assertIn('Invoice 12345', snippets)
+        self.assertEqual(indices, [0])
 
     def test_match_keywords_excludes(self):
         text = 'Sensitive data\nPublic data'
-        matched, snippets, kws = ocr_engine.OCREngine.match_keywords(
+        matched, snippets, kws, indices = ocr_engine.OCREngine.match_keywords(
             full_text=text,
             keywords=['data'],
             match_logic='any',
@@ -75,6 +78,7 @@ class TestOCREngine(unittest.TestCase):
         self.assertFalse(matched)
         self.assertEqual(snippets, [])
         self.assertEqual(kws, [])
+        self.assertEqual(indices, [])
 
     def test_match_keywords_invalid_regex_raises(self):
         with self.assertRaises(ValueError):
@@ -119,13 +123,40 @@ class TestOCREngine(unittest.TestCase):
     def test_match_keywords_lower_precomputed(self):
         """Precomputed lowercase optimization should match case-insensitively."""
         text = 'UPPERCASE\nlowercase'
-        matched, snippets, kws = ocr_engine.OCREngine.match_keywords(
+        matched, snippets, kws, indices = ocr_engine.OCREngine.match_keywords(
             full_text=text,
             keywords=['uppercase', 'LOWERCASE'],
             match_logic='all',
         )
         self.assertTrue(matched)
         self.assertEqual(len(kws), 2)
+
+    def test_match_keywords_duplicate_text_boxes(self):
+        """Duplicate text lines produce only the matching line's box by index."""
+        text = 'Header\nkeyword here\nFooter\nkeyword here\nOther'
+        matched, snippets, kws, indices = ocr_engine.OCREngine.match_keywords(
+            full_text=text,
+            keywords=['keyword'],
+            match_logic='any',
+        )
+        self.assertTrue(matched)
+        self.assertEqual(len(snippets), 2)
+        # Both matches are at indices 1 and 3 (0-indexed)
+        self.assertEqual(indices, [1, 3])
+
+        # Simulate detailed_results lines (index 0..4)
+        detailed_results = [
+            {"text": "Header",       "box": [[0,0],[10,0],[10,10],[0,10]]},
+            {"text": "keyword here", "box": [[0,10],[20,10],[20,20],[0,20]]},
+            {"text": "Footer",       "box": [[0,20],[15,20],[15,30],[0,30]]},
+            {"text": "keyword here", "box": [[0,30],[20,30],[20,40],[0,40]]},
+            {"text": "Other",        "box": [[0,40],[10,40],[10,50],[0,50]]},
+        ]
+        matched_boxes = [detailed_results[i]["box"] for i in indices if i < len(detailed_results)]
+        self.assertEqual(len(matched_boxes), 2)
+        # The boxes should be the two keyword lines, not the Footer/Header
+        self.assertEqual(matched_boxes[0], [[0,10],[20,10],[20,20],[0,20]])
+        self.assertEqual(matched_boxes[1], [[0,30],[20,30],[20,40],[0,40]])
 
 
 class TestCopyFileResolveConflict(unittest.TestCase):

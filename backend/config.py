@@ -17,6 +17,7 @@ class Settings:
     ocr_confidence_threshold: float = 0.0
     max_snippets_per_match: int = 3
     max_history_per_dir: int = 5
+    max_saved_results: int = 20
     enable_ocr_cache: bool = True
 
 
@@ -56,6 +57,7 @@ class SettingsUpdate(BaseModel):
     ocr_confidence_threshold: Optional[float] = None
     max_snippets_per_match: Optional[int] = None
     max_history_per_dir: Optional[int] = None
+    max_saved_results: Optional[int] = None
     enable_ocr_cache: Optional[bool] = None
 
 

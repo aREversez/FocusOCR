@@ -109,6 +109,187 @@ class TestResultsEndpoints(unittest.TestCase):
             self.assertEqual(result["results"][0]["total_files"], 200)
             self.assertEqual(result["results"][0]["matched_files"], 50)
 
+    @patch("subprocess.Popen")
+    @patch("backend.app.Path")
+    def test_reveal_in_explorer_windows(self, mock_path_cls, mock_popen):
+        mock_path = mock_path_cls.return_value
+        mock_path.exists.return_value = True
+        from backend.app import reveal_in_explorer
+        with patch("os.name", "nt"):
+            reveal_in_explorer("C:\\Users\\test\\image.jpg")
+            mock_popen.assert_called_once()
+            args = mock_popen.call_args[0][0]
+            self.assertEqual(args[0], "explorer")
+            self.assertEqual(args[1], "/select,")
+
+    @patch("subprocess.Popen")
+    @patch("backend.app.Path")
+    def test_reveal_in_explorer_macos(self, mock_path_cls, mock_popen):
+        mock_path = mock_path_cls.return_value
+        mock_path.exists.return_value = True
+        from backend.app import reveal_in_explorer
+        with patch("sys.platform", "darwin"):
+            with patch("os.name", "posix"):
+                reveal_in_explorer("/Users/test/image.jpg")
+                mock_popen.assert_called_once()
+                args = mock_popen.call_args[0][0]
+                self.assertEqual(args[0], "open")
+                self.assertEqual(args[1], "-R")
+
+    @patch("subprocess.Popen")
+    @patch("backend.app.Path")
+    def test_reveal_in_explorer_linux(self, mock_path_cls, mock_popen):
+        mock_path = mock_path_cls.return_value
+        mock_path.exists.return_value = True
+        from backend.app import reveal_in_explorer
+        with patch("sys.platform", "linux"):
+            with patch("os.name", "posix"):
+                reveal_in_explorer("/home/test/image.jpg")
+                mock_popen.assert_called_once()
+                args = mock_popen.call_args[0][0]
+                self.assertEqual(args[0], "xdg-open")
+
+    def test_delete_result_normal(self):
+        from backend.app import RESULTS_DIR
+        with patch("backend.app.RESULTS_DIR", self.results_dir):
+            from backend.app import delete_result
+            self._save_result("todelete.json", {"matches": [], "metadata": {}})
+            result = delete_result("todelete.json")
+            self.assertEqual(result["status"], "ok")
+            self.assertFalse((self.results_dir / "todelete.json").exists())
+
+    def test_delete_result_nonexistent(self):
+        from backend.app import RESULTS_DIR
+        with patch("backend.app.RESULTS_DIR", self.results_dir):
+            from backend.app import delete_result
+            from fastapi import HTTPException
+            with self.assertRaises(HTTPException) as ctx:
+                delete_result("nope.json")
+            self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_delete_result_path_traversal(self):
+        from backend.app import RESULTS_DIR
+        with patch("backend.app.RESULTS_DIR", self.results_dir):
+            from backend.app import delete_result
+            from fastapi import HTTPException
+            with self.assertRaises(HTTPException) as ctx:
+                delete_result("../secret.txt")
+            self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_save_results_respects_max_saved(self):
+        from backend.app import RESULTS_DIR
+        with patch("backend.app.RESULTS_DIR", self.results_dir):
+            from backend.app import save_results, SaveResultsPayload
+
+            # Save 22 results; with default max_saved_results=20, only 20 should remain
+            for i in range(22):
+                payload = SaveResultsPayload(
+                    matches=[{"filename": f"img_{i}.jpg"}],
+                    metadata={"total_files": i + 1}
+                )
+                save_results(payload)
+
+            remaining = sorted(self.results_dir.glob("scan_*.json"))
+            self.assertLessEqual(len(remaining), 20)
+
+
+class TestScanStreamLockLeak(unittest.TestCase):
+    """Regression: parameter validation failure must not acquire the scan lock."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        # Don't mock OCREngine entirely — patch only _init_ocr_engine so the
+        # real lock logic (try_acquire_scan / _scan_in_progress) is exercised.
+        self.init_patcher = patch('backend.ocr_engine.OCREngine._init_ocr_engine')
+        self.mock_init = self.init_patcher.start()
+        if 'backend.app' in sys.modules:
+            del sys.modules['backend.app']
+
+    def tearDown(self):
+        self.init_patcher.stop()
+        import shutil
+        shutil.rmtree(self._tmpdir)
+        if 'backend.app' in sys.modules:
+            del sys.modules['backend.app']
+
+    def test_invalid_match_logic_does_not_acquire_lock(self):
+        """Bad match_logic → 400; _scan_in_progress stays False."""
+        from backend.app import scan_stream, ocr_engine
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as ctx:
+            scan_stream(
+                target_dir=self._tmpdir,
+                dest_dir="",
+                keywords=["test"],
+                match_logic="invalid",
+                exclude_keywords=[]
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertFalse(ocr_engine._scan_in_progress)
+
+    def test_empty_keywords_does_not_acquire_lock(self):
+        """Empty keywords → 400; _scan_in_progress stays False."""
+        from backend.app import scan_stream, ocr_engine
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as ctx:
+            scan_stream(
+                target_dir=self._tmpdir,
+                dest_dir="",
+                keywords=[],
+                match_logic="any",
+                exclude_keywords=[]
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertFalse(ocr_engine._scan_in_progress)
+
+    def test_nonexistent_target_dir_does_not_acquire_lock(self):
+        """Missing target dir → 400; _scan_in_progress stays False."""
+        from backend.app import scan_stream, ocr_engine
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as ctx:
+            scan_stream(
+                target_dir=os.path.join(self._tmpdir, "nonexistent"),
+                dest_dir="",
+                keywords=["test"],
+                match_logic="any",
+                exclude_keywords=[]
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertFalse(ocr_engine._scan_in_progress)
+
+    def test_overlapping_dirs_does_not_acquire_lock(self):
+        """Target == dest → 400; _scan_in_progress stays False."""
+        from backend.app import scan_stream, ocr_engine
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as ctx:
+            scan_stream(
+                target_dir=self._tmpdir,
+                dest_dir=self._tmpdir,  # same as target → overlap
+                keywords=["test"],
+                match_logic="any",
+                exclude_keywords=[]
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertFalse(ocr_engine._scan_in_progress)
+
+    def test_valid_request_acquires_lock(self):
+        """A fully valid request should acquire the lock."""
+        from backend.app import scan_stream, ocr_engine
+        result = scan_stream(
+            target_dir=self._tmpdir,
+            dest_dir="",
+            keywords=["test"],
+            match_logic="any",
+            exclude_keywords=[]
+        )
+        self.assertTrue(ocr_engine._scan_in_progress)
+        ocr_engine.release_scan(ocr_engine._scan_generation)
+        self.assertFalse(ocr_engine._scan_in_progress)
+
 
 if __name__ == '__main__':
     unittest.main()

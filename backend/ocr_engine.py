@@ -79,10 +79,24 @@ class OCREngine:
             return logger
         _ie.get_logger = _silent_logger
 
-        onnxruntime = importlib.import_module("onnxruntime")
+        try:
+            onnxruntime = importlib.import_module("onnxruntime")
+        except ModuleNotFoundError:
+            raise RuntimeError(
+                "Missing required dependency: onnxruntime. "
+                "Install with: pip install onnxruntime-directml"
+            )
+
+        try:
+            RapidOCR = importlib.import_module("rapidocr_onnxruntime").RapidOCR
+        except ModuleNotFoundError:
+            raise RuntimeError(
+                "Missing required dependency: rapidocr_onnxruntime. "
+                "Install with: pip install rapidocr_onnxruntime"
+            )
+
         providers = onnxruntime.get_available_providers()
         use_dml = "DmlExecutionProvider" in providers
-        RapidOCR = importlib.import_module("rapidocr_onnxruntime").RapidOCR
         if use_dml:
             print("DirectML GPU acceleration detected — enabling GPU inference")
             self._ocr = RapidOCR(det_use_dml=True, cls_use_dml=True, rec_use_dml=True)
@@ -229,7 +243,7 @@ class OCREngine:
         match_logic: str = "any",
         use_regex: bool = False,
         exclude_keywords: List[str] = None
-    ) -> Tuple[bool, List[str], List[str]]:
+    ) -> Tuple[bool, List[str], List[str], List[int]]:
         """
         Checks if OCR text matches keywords based on 'any' or 'all' logical operators.
         Supports plain substring matching (spaces/without-spaces for CJK robustness)
@@ -240,13 +254,14 @@ class OCREngine:
             - boolean: True if it matches (and no exclusion keyword matched)
             - list of strings: the specific lines/snippets where the keywords were found
             - list of strings: the original keywords that actually matched
+            - list of ints: line indices (within full_text.split('\\n')) for each snippet
         """
         if not keywords:
-            return False, [], []
+            return False, [], [], []
         
         valid_kws = [kw.strip() for kw in keywords if kw.strip()]
         if not valid_kws:
-            return False, [], []
+            return False, [], [], []
         
         # Validate regex patterns upfront
         if use_regex:
@@ -283,16 +298,17 @@ class OCREngine:
                     continue
                 if use_regex:
                     if re.search(ex_kw, full_text, re.IGNORECASE):
-                        return False, [], []
+                        return False, [], [], []
                 else:
                     ex_lower = ex_kw.lower()
                     if ex_lower in full_text_lower or ex_lower in full_text_no_spaces:
-                        return False, [], []
+                        return False, [], [], []
         
         snippets = []
+        snippet_indices = []
         if is_match:
             lines = full_text.split('\n')
-            for line in lines:
+            for idx, line in enumerate(lines):
                 line_stripped = line.strip()
                 if not line_stripped:
                     continue
@@ -300,6 +316,7 @@ class OCREngine:
                     for kw_orig in matched_kws:
                         if re.search(kw_orig, line_stripped, re.IGNORECASE):
                             snippets.append(line_stripped)
+                            snippet_indices.append(idx)
                             break
                 else:
                     ll = line_stripped.lower()
@@ -308,9 +325,10 @@ class OCREngine:
                         kwl = kw_orig.lower()
                         if kwl in ll or kwl in lns:
                             snippets.append(line_stripped)
+                            snippet_indices.append(idx)
                             break
                         
-        return is_match, snippets, matched_kws
+        return is_match, snippets, matched_kws, snippet_indices
 
 
     @staticmethod
@@ -450,18 +468,17 @@ class OCREngine:
                 cached_files += 1
             
             # Check match
-            is_match, snippets, matched_kws = self.match_keywords(
+            is_match, snippets, matched_kws, snippet_indices = self.match_keywords(
                 full_text, keywords, match_logic,
                 use_regex=use_regex, exclude_keywords=exclude_keywords
             )
 
-            # Extract bounding boxes for matched snippets
+            # Extract bounding boxes for matched snippets by line index
             matched_boxes = []
             if is_match and detailed_results:
-                snippet_texts = set(s.strip() for s in snippets)
-                for detail in detailed_results:
-                    if detail["text"].strip() in snippet_texts:
-                        matched_boxes.append(detail["box"])
+                for i in snippet_indices:
+                    if i < len(detailed_results):
+                        matched_boxes.append(detailed_results[i]["box"])
 
             copied_paths = []
             is_duplicate = False

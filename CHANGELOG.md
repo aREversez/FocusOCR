@@ -6,6 +6,67 @@ into one file for convenience.
 
 ---
 
+## [V1.0.7] - 2026-07-12
+
+### Features
+- **Delete saved results** — each row in the Load Results modal now has a trash icon;
+  calls `DELETE /api/results/{filename}` (path-traversal safe), removes the row and
+  shows a toast immediately — no confirmation dialog needed.
+- **Results in cache stats** — `GET /api/cache-stats` now includes a `results` field
+  with file count and total size (MB), giving users visibility into disk usage.
+- **Auto-prune saved results** — a new `max_saved_results` setting (default 20) limits
+  how many result files accumulate in `~/.focusocr/results/`. When saving a new result,
+  the oldest files beyond the limit are automatically deleted.
+
+### Bug Fixes
+- **Duplicate bounding boxes** — when the same text appeared in multiple lines of an
+  image, all matching lines previously had their boxes collected into `matched_boxes`.
+  `match_keywords` now returns the line index alongside each snippet, and
+  `scan_and_organize` uses the index to fetch the correct box from `detailed_results`
+  instead of matching by text content. A unit test covers this scenario.
+- **Scan lock leak on bad parameters** — `scan_stream` validated `match_logic`,
+  keywords, target directory existence, and dest-dir overlap *after* calling
+  `try_acquire_scan()`. If any validation failed, the lock was permanently held until
+  the 60s stale timeout. Fixed by moving all parameter validation before the lock
+  acquisition — "validate first, then take the resource."
+
+### CI & Testing
+- 10 new tests: path traversal (3), results list, SaveResultsPayload model, reveal
+  in explorer (3 platforms), lock leak regression (4 scenarios), delete result (3),
+  save-results auto-prune, duplicate-text bounding boxes.
+- **`folder_picker.py`** — `import tkinter` moved inside `_open_picker()` so the
+  module can be imported without a display server; `thread.join()` now has a 120s
+  timeout to avoid thread-pool exhaustion.
+- **`ocr_engine.py`** — missing `onnxruntime` / `rapidocr_onnxruntime` now raise a
+  descriptive `RuntimeError` with installation instructions instead of a bare
+  `ModuleNotFoundError`.
+- **`test_app.py`** — no longer imports `tkinter` through `backend.app`; the lazy
+  `folder_picker` import inside `browse_folder()` keeps `backend.app` importable on
+  headless CI.
+
+### Security
+- Path traversal in `get_result` / `delete_result` fixed for Windows: `\` is a valid
+  URL character, but `Path(filename).name` strips it on all platforms.
+- `delete_result` reuses the same `Path(filename).name` sanitizer as `get_result`.
+
+### Other
+- `list_results()` reverted from a fragile 8KB-header-parsing scheme to full
+  `json.loads()`. The header-only approach silently returned `total_files=0` /
+  `matched_files=0` whenever the `matches` array pushed the `"metadata"` key past
+  8192 bytes.
+- `confidence_threshold` in `scan_stream` now validated server-side via
+  `Query(ge=0.0, le=1.0)`.
+- Corrupt result JSON files produce a warning with traceback instead of being silently
+  skipped.
+- `frontend/app.js` — `renderHistory` uses the detected path separator instead of
+  a hardcoded `...\\`.
+- Removed dead duplicate `RapidOCR = importlib.import_module(...)` line in
+  `_init_ocr_engine`.
+- `SaveResultsPayload` moved from `app.py` to `config.py`, reducing test dependency
+  on the full FastAPI app.
+
+---
+
 ## [V1.0.6] - 2026-07-11
 
 ### Correctness / Robustness

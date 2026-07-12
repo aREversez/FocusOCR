@@ -385,17 +385,49 @@ function showLoadResultsModal(results) {
     const list = document.getElementById('load-results-list');
     list.innerHTML = '';
     results.slice(0, 50).forEach((r, i) => {
+        const row = document.createElement('div');
+        row.className = 'result-item-row';
+        row.style.cssText = 'display:flex;align-items:center;gap:0.4rem;padding:0.2rem 0';
+
         const item = document.createElement('button');
         item.className = 'btn btn-text result-item';
-        item.style.cssText = 'padding:0.6rem;text-align:left;width:100%;border-bottom:1px solid var(--border-color)';
+        item.style.cssText = 'padding:0.6rem;text-align:left;flex:1;border-bottom:1px solid var(--border-color)';
         item.textContent = `${i+1}. ${r.date} — ${r.matched_files} matches / ${r.total_files} files`;
         item.addEventListener('click', () => {
             modal.classList.add('hidden');
             loadResultFile(r.filename);
         });
-        list.appendChild(item);
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-text';
+        delBtn.style.cssText = 'padding:0.4rem;flex-shrink:0;color:var(--text-dim);border:none';
+        delBtn.title = 'Delete this saved result';
+        delBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+        delBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await deleteResultFile(r.filename, row);
+        });
+
+        row.appendChild(item);
+        row.appendChild(delBtn);
+        list.appendChild(row);
     });
     modal.classList.remove('hidden');
+}
+
+async function deleteResultFile(filename, rowElement) {
+    try {
+        const resp = await fetch(`/api/results/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            showToast('Failed to delete: ' + (data.detail || resp.statusText), 'error');
+            return;
+        }
+        rowElement.remove();
+        showToast(`Deleted ${filename}`, 'info');
+    } catch (e) {
+        showToast('Failed to delete result: ' + e.message, 'error');
+    }
 }
 
 async function loadResultFile(filename) {
@@ -898,7 +930,7 @@ function renderHistory(type) {
         try {
             const parts = path.split(/[\\/]/);
             if (parts.length > 2) {
-                displayPath = '...\\' + parts[parts.length - 1];
+                displayPath = '\u2026' + (path.includes('\\') ? '\\' : '/') + parts[parts.length - 1];
             }
         } catch (e) {}
 
