@@ -220,7 +220,6 @@ def save_results(data: SaveResultsPayload):
         )
 
         # Enforce max_saved_results — delete the oldest files if over limit
-        from backend.config import load_settings
         settings = load_settings()
         max_saved = settings.max_saved_results
         all_files = sorted(
