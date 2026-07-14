@@ -73,18 +73,23 @@ class SaveResultsPayload(BaseModel):
 
 def prune_cache_dir(cache_dir: Path, max_files: int, pattern: str = "*") -> int:
     """Removes the oldest files in *cache_dir* until at most *max_files* remain.
-    Returns the number of files pruned."""
-    if not cache_dir.exists() or max_files <= 0:
+    Returns the number of files pruned.
+
+    *max_files* semantics:
+      - negative: no pruning (treated as unlimited)
+      - 0: remove ALL matching files
+      - positive: keep at most this many files
+    """
+    if not cache_dir.exists() or max_files < 0:
         return 0
     files = sorted(
         [f for f in cache_dir.glob(pattern) if f.is_file()],
         key=lambda p: p.stat().st_mtime
     )
-    pruned = 0
-    while len(files) > max_files:
-        oldest = files.pop(0)
-        oldest.unlink(missing_ok=True)
-        pruned += 1
-    if pruned:
-        print(f"Pruned {pruned} files from {cache_dir.name} (max {max_files})")
-    return pruned
+    excess = len(files) - max_files
+    if excess <= 0:
+        return 0
+    for f in files[:excess]:
+        f.unlink(missing_ok=True)
+    print(f"Pruned {excess} files from {cache_dir.name} (max {max_files})")
+    return excess

@@ -115,7 +115,7 @@ THUMB_CACHE_DIR = Path.home() / ".focusocr" / "thumb_cache"
 THUMB_MAX_SIZE = 600
 
 _thumb_cache_write_counter = 0
-_THUMB_PRUNE_INTERVAL = 50
+_THUMB_PRUNE_INTERVAL = 50  # NOTE: not locked — acceptable approximation; see ocr_engine.py
 
 @app.get("/api/thumbnail")
 def get_thumbnail(path: str):

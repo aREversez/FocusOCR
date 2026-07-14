@@ -196,10 +196,12 @@ class OCREngine:
             print(f"Failed to write OCR cache for {img_path}: {e}")
             return
 
-        # Periodically prune OCR cache dir
+        # Periodically prune OCR cache dir.
+        # NOTE: counter increment is not locked — acceptable approximation under
+        # the GIL; at worst a prune cycle is skipped or doubled.
         OCREngine._cache_write_counter += 1
         if OCREngine._cache_write_counter % OCREngine.PRUNE_INTERVAL == 0:
-            from backend.config import load_settings, prune_cache_dir, OCR_CACHE_DIR
+            from backend.config import prune_cache_dir
             s = load_settings()
             prune_cache_dir(OCR_CACHE_DIR, s.max_ocr_cache_files, "*.json")
 
