@@ -28,6 +28,8 @@ def sanitize_folder_name(name: str) -> str:
 
 class OCREngine:
     SCAN_LOCK_TIMEOUT = 60  # seconds without heartbeat before lock is considered stale
+    _cache_write_counter = 0  # shared gate for cache dir pruning
+    PRUNE_INTERVAL = 50  # check cache dir size every N writes
 
     def __init__(self):
         self._cancel_event = threading.Event()
@@ -120,17 +122,30 @@ class OCREngine:
         self._cancel_event.clear()
 
     def get_all_images(self, target_dir: str, recursive: bool = True) -> List[Path]:
-        """Finds all supported images in the target directory."""
+        """Finds all supported images in the target directory.
+        Checks _cancel_event periodically during enumeration so cancellation
+        works even on very large directories."""
         target_path = Path(target_dir)
         if not target_path.exists() or not target_path.is_dir():
             raise ValueError(f"Target directory '{target_dir}' does not exist or is not a directory.")
-        
+
         images = []
-        pattern = "**/*" if recursive else "*"
-        for p in target_path.glob(pattern):
-            if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
-                images.append(p)
-        # Safe sort — skip files deleted between glob and sort
+        if recursive:
+            for root, _dirs, files in os.walk(target_path):
+                if self._cancel_event.is_set():
+                    print("Image enumeration cancelled by user")
+                    return []
+                for fname in files:
+                    p = Path(root) / fname
+                    if p.suffix.lower() in IMAGE_EXTENSIONS:
+                        images.append(p)
+        else:
+            for p in target_path.iterdir():
+                if self._cancel_event.is_set():
+                    return []
+                if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
+                    images.append(p)
+        # Safe sort — skip files deleted between walk and sort
         def _mtime_or_zero(p):
             try:
                 return p.stat().st_mtime
@@ -179,6 +194,14 @@ class OCREngine:
             )
         except Exception as e:
             print(f"Failed to write OCR cache for {img_path}: {e}")
+            return
+
+        # Periodically prune OCR cache dir
+        OCREngine._cache_write_counter += 1
+        if OCREngine._cache_write_counter % OCREngine.PRUNE_INTERVAL == 0:
+            from backend.config import load_settings, prune_cache_dir, OCR_CACHE_DIR
+            s = load_settings()
+            prune_cache_dir(OCR_CACHE_DIR, s.max_ocr_cache_files, "*.json")
 
     def clear_cache(self) -> int:
         """Deletes all cached OCR results. Returns the number of files removed."""

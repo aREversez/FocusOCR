@@ -114,6 +114,9 @@ def reveal_in_explorer(path: str):
 THUMB_CACHE_DIR = Path.home() / ".focusocr" / "thumb_cache"
 THUMB_MAX_SIZE = 600
 
+_thumb_cache_write_counter = 0
+_THUMB_PRUNE_INTERVAL = 50
+
 @app.get("/api/thumbnail")
 def get_thumbnail(path: str):
     """Serves a cached 300px WebP thumbnail of the requested image."""
@@ -145,6 +148,13 @@ def get_thumbnail(path: str):
                     new_w = int(w * THUMB_MAX_SIZE / h)
                 img = img.resize((new_w, new_h), Image.LANCZOS)
             img.save(cache_file, 'WEBP', quality=95)
+            # Periodically prune thumbnail cache dir
+            global _thumb_cache_write_counter
+            _thumb_cache_write_counter += 1
+            if _thumb_cache_write_counter % _THUMB_PRUNE_INTERVAL == 0:
+                from .config import prune_cache_dir
+                s = load_settings()
+                prune_cache_dir(THUMB_CACHE_DIR, s.max_thumb_cache_files, "*.webp")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to generate thumbnail: {str(e)}")
 
