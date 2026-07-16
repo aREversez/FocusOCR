@@ -92,6 +92,42 @@ def get_image(path: str):
         
     return FileResponse(str(file_path))
 
+@app.get("/api/image-info")
+def get_image_info(path: str):
+    """Returns image metadata: dimensions (width, height) and file size."""
+    decoded_path = urllib.parse.unquote(path)
+    file_path = Path(decoded_path)
+
+    if not file_path.is_absolute():
+        raise HTTPException(status_code=400, detail="Path must be absolute")
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    if file_path.suffix.lower() not in IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Not a supported image format")
+
+    stat = file_path.stat()
+    size_bytes = stat.st_size
+
+    if size_bytes < 1024:
+        size_formatted = f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        size_formatted = f"{size_bytes / 1024:.1f} KB"
+    else:
+        size_formatted = f"{size_bytes / (1024 * 1024):.1f} MB"
+
+    try:
+        img = Image.open(file_path)
+        width, height = img.size
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read image dimensions: {str(e)}")
+
+    return {
+        "width": width,
+        "height": height,
+        "size_bytes": size_bytes,
+        "size_formatted": size_formatted
+    }
+
 @app.get("/api/reveal")
 def reveal_in_explorer(path: str):
     """Opens the file's parent folder in Windows Explorer with the file selected."""
