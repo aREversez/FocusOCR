@@ -9,6 +9,7 @@ on:
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.11"]
@@ -26,5 +27,6 @@ jobs:
           python -m pip install --upgrade pip
           grep -v pyinstaller requirements.txt > req-filtered.txt
           pip install -r req-filtered.txt
+          pip install -r requirements-test.txt
       - name: Run tests
         run: python -m unittest discover -s tests -v
