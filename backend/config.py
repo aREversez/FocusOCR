@@ -18,6 +18,8 @@ class Settings:
     max_snippets_per_match: int = 3
     max_history_per_dir: int = 5
     max_saved_results: int = 20
+    max_ocr_cache_files: int = 5000
+    max_thumb_cache_files: int = 3000
     enable_ocr_cache: bool = True
 
 
@@ -58,6 +60,8 @@ class SettingsUpdate(BaseModel):
     max_snippets_per_match: Optional[int] = None
     max_history_per_dir: Optional[int] = None
     max_saved_results: Optional[int] = None
+    max_ocr_cache_files: Optional[int] = None
+    max_thumb_cache_files: Optional[int] = None
     enable_ocr_cache: Optional[bool] = None
 
 
@@ -65,3 +69,27 @@ class SaveResultsPayload(BaseModel):
     """Pydantic model for saving scan results."""
     matches: List[Dict[str, Any]]
     metadata: Optional[Dict[str, Any]] = None
+
+
+def prune_cache_dir(cache_dir: Path, max_files: int, pattern: str = "*") -> int:
+    """Removes the oldest files in *cache_dir* until at most *max_files* remain.
+    Returns the number of files pruned.
+
+    *max_files* semantics:
+      - negative: no pruning (treated as unlimited)
+      - 0: remove ALL matching files
+      - positive: keep at most this many files
+    """
+    if not cache_dir.exists() or max_files < 0:
+        return 0
+    files = sorted(
+        [f for f in cache_dir.glob(pattern) if f.is_file()],
+        key=lambda p: p.stat().st_mtime
+    )
+    excess = len(files) - max_files
+    if excess <= 0:
+        return 0
+    for f in files[:excess]:
+        f.unlink(missing_ok=True)
+    print(f"Pruned {excess} files from {cache_dir.name} (max {max_files})")
+    return excess

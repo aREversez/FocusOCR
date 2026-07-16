@@ -299,6 +299,13 @@
     <!-- Image Preview Lightbox -->
     <div class="lightbox hidden" id="lightbox">
         <div class="lightbox-overlay"></div>
+        <span class="lightbox-counter" id="lightbox-counter"></span>
+        <button class="lightbox-nav lightbox-nav-prev" id="btn-lightbox-prev" title="Previous (←)" aria-label="Previous image">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <button class="lightbox-nav lightbox-nav-next" id="btn-lightbox-next" title="Next (→)" aria-label="Next image">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
         <div class="lightbox-content">
             <button class="lightbox-close" id="btn-lightbox-close">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -308,8 +315,13 @@
                 <svg class="lightbox-boxes" id="lightbox-boxes"></svg>
             </div>
             <div class="lightbox-meta">
-                <h4 id="lightbox-filename">Filename</h4>
-                <p id="lightbox-path">Path</p>
+                <div class="lightbox-meta-header">
+                    <div class="lightbox-meta-text">
+                        <h4 id="lightbox-filename">Filename</h4>
+                        <p id="lightbox-path">Path</p>
+                    </div>
+                    <div class="lightbox-meta-info" id="lightbox-image-info"></div>
+                </div>
                 <div class="lightbox-ocr" id="lightbox-ocr-snippets">
                     <!-- Snippets show here -->
                 </div>

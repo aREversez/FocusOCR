@@ -2,6 +2,8 @@
 let sseConnection = null;
 let matchedFiles = [];
 let maxHistoryPerDir = 5;
+let currentLightboxIndex = -1;
+let lightboxKeywords = [];
 let scanStats = {
     total: 0,
     processed: 0,
@@ -69,6 +71,10 @@ const elLightboxClose = document.getElementById('btn-lightbox-close');
 const elLightboxFilename = document.getElementById('lightbox-filename');
 const elLightboxPath = document.getElementById('lightbox-path');
 const elLightboxSnippets = document.getElementById('lightbox-ocr-snippets');
+const elLightboxPrev = document.getElementById('btn-lightbox-prev');
+const elLightboxNext = document.getElementById('btn-lightbox-next');
+const elLightboxCounter = document.getElementById('lightbox-counter');
+const elLightboxInfo = document.getElementById('lightbox-image-info');
 
 // Theme management
 const THEME_KEY = 'focusocr_theme';
@@ -164,13 +170,29 @@ document.addEventListener('DOMContentLoaded', () => {
     elLightboxClose.addEventListener('click', closeLightbox);
     document.querySelector('.lightbox-overlay').addEventListener('click', closeLightbox);
     
+    // Lightbox navigation
+    elLightboxPrev.addEventListener('click', () => navigateLightbox(-1));
+    elLightboxNext.addEventListener('click', () => navigateLightbox(1));
+    
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            if (!elLightbox.classList.contains('hidden')) {
+        if (!elLightbox.classList.contains('hidden')) {
+            if (e.key === 'Escape') {
                 closeLightbox();
                 return;
             }
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                navigateLightbox(-1);
+                return;
+            }
+            if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                navigateLightbox(1);
+                return;
+            }
+        }
+        if (e.key === 'Escape') {
             elExportMenu.classList.add('hidden');
         }
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -819,6 +841,9 @@ function endScan(statusText, statusColor) {
 
 // Lightbox controllers
 function openLightbox(match, keywords) {
+    currentLightboxIndex = matchedFiles.findIndex(m => m.original_path === match.original_path);
+    lightboxKeywords = keywords;
+    
     const imgUrl = `/api/image?path=${encodeURIComponent(match.original_path)}`;
     
     elLightboxImg.src = imgUrl;
@@ -829,6 +854,12 @@ function openLightbox(match, keywords) {
     elLightboxSnippets.innerHTML = match.snippets.map(snippet => 
         `<div class="snippet-line" style="margin-bottom: 0.5rem;">${highlightText(snippet, keywords)}</div>`
     ).join('');
+    
+    // Update position counter and nav buttons
+    updateLightboxNav();
+    
+    // Fetch and display image info
+    fetchImageInfo(match.original_path);
     
     // Render bounding box overlay when image loads
     const boxesSvg = document.getElementById('lightbox-boxes');
@@ -855,6 +886,36 @@ function openLightbox(match, keywords) {
     
     elLightbox.classList.remove('hidden');
     document.body.style.overflow = 'hidden'; // Lock background scroll
+}
+
+function navigateLightbox(delta) {
+    const newIndex = currentLightboxIndex + delta;
+    if (newIndex < 0 || newIndex >= matchedFiles.length) return;
+    openLightbox(matchedFiles[newIndex], lightboxKeywords);
+}
+
+function updateLightboxNav() {
+    const total = matchedFiles.length;
+    elLightboxPrev.style.display = currentLightboxIndex > 0 ? '' : 'none';
+    elLightboxNext.style.display = currentLightboxIndex < total - 1 ? '' : 'none';
+    elLightboxCounter.textContent = total > 0 ? `${currentLightboxIndex + 1} / ${total}` : '';
+}
+
+async function fetchImageInfo(path) {
+    try {
+        const resp = await fetch(`/api/image-info?path=${encodeURIComponent(path)}`);
+        if (!resp.ok) {
+            elLightboxInfo.innerHTML = '';
+            return;
+        }
+        const info = await resp.json();
+        elLightboxInfo.innerHTML = `
+            <span><svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> ${info.width} &times; ${info.height}</span>
+            <span><svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> ${info.size_formatted}</span>
+        `;
+    } catch (e) {
+        elLightboxInfo.innerHTML = '';
+    }
 }
 
 function closeLightbox() {
