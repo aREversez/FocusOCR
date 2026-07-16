@@ -291,5 +291,128 @@ class TestScanStreamLockLeak(unittest.TestCase):
         self.assertFalse(ocr_engine._scan_in_progress)
 
 
+class TestScanStreamIntegration(unittest.TestCase):
+    """End-to-end tests of the full scan pipeline via TestClient.
+    Only self._ocr (the RapidOCR model call) is mocked; all other
+    logic — image enumeration, match_keywords, file copy, lock
+    management — runs on the real OCREngine."""
+
+    FAKE_OCR_RESULTS = {
+        "invoice_001.jpg": (
+            [
+                [[[0, 0], [100, 0], [100, 20], [0, 20]], "发票号码: 12345678", 0.95],
+                [[[0, 25], [150, 25], [150, 45], [0, 45]], "日期: 2024-01-15", 0.90],
+                [[[0, 50], [200, 50], [200, 70], [0, 70]], "金额合计: ¥1,234.56", 0.88],
+            ],
+            0.05,
+        ),
+        "random_photo.jpg": (
+            [
+                [[[0, 0], [200, 0], [200, 30], [0, 30]], "beach sunset vacation", 0.85],
+                [[[0, 35], [100, 35], [100, 50], [0, 50]], "Nikon D850", 0.92],
+            ],
+            0.03,
+        ),
+    }
+
+    @staticmethod
+    def _fake_ocr(img_path):
+        name = Path(img_path).name
+        return TestScanStreamIntegration.FAKE_OCR_RESULTS.get(name, ([], 0.01))
+
+    def setUp(self):
+        # Patch _init_ocr_engine on the already-loaded backend.ocr_engine module
+        # so the fresh OCREngine() created during re-import skips model loading.
+        self.init_patcher = patch('backend.ocr_engine.OCREngine._init_ocr_engine')
+        self.mock_init = self.init_patcher.start()
+        # Only delete backend.app — keep backend.ocr_engine cached so the patch
+        # survives the re-import (deleting sibling modules would orphan the patch).
+        if 'backend.app' in sys.modules:
+            del sys.modules['backend.app']
+        from backend.app import ocr_engine
+        # Install the fake OCR callable on the fresh singleton
+        ocr_engine._ocr = self._fake_ocr
+
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.target_dir = Path(self.tmpdir.name) / "source"
+        self.dest_dir = Path(self.tmpdir.name) / "dest"
+        self.target_dir.mkdir()
+        self.dest_dir.mkdir()
+        (self.target_dir / "invoice_001.jpg").write_text("fake")
+        (self.target_dir / "random_photo.jpg").write_text("fake")
+
+    def tearDown(self):
+        self.init_patcher.stop()
+        # Ensure lock is not leaked between test runs
+        import backend.ocr_engine as oe_mod
+        oe_mod.OCREngine._scan_in_progress = False
+        self.tmpdir.cleanup()
+        if 'backend.app' in sys.modules:
+            del sys.modules['backend.app']
+
+    def _parse_sse(self, text: str) -> list:
+        return [json.loads(line[6:]) for line in text.split("\n") if line.startswith("data: ")]
+
+    def test_happy_path_match_and_copy(self):
+        """Keyword "发票" matches invoice_001.jpg; file is copied to dest/发票/."""
+        from fastapi.testclient import TestClient
+        from backend.app import app, ocr_engine
+
+        client = TestClient(app)
+        resp = client.get("/api/scan-stream", params={
+            "target_dir": str(self.target_dir),
+            "dest_dir": str(self.dest_dir),
+            "keywords": ["发票"],
+            "match_logic": "any",
+        })
+        self.assertEqual(resp.status_code, 200)
+        events = self._parse_sse(resp.text)
+        self.assertGreater(len(events), 0)
+        final = events[-1]
+        self.assertEqual(final["status"], "complete")
+        self.assertEqual(final["matched_files"], 1)
+        # Verify file was copied
+        copied = self.dest_dir / "发票" / "invoice_001.jpg"
+        self.assertTrue(copied.exists())
+        # Lock must be released
+        self.assertFalse(ocr_engine._scan_in_progress)
+
+    def test_no_match_no_copy(self):
+        """Keyword "快递" matches nothing; no files copied."""
+        from fastapi.testclient import TestClient
+        from backend.app import app, ocr_engine
+
+        client = TestClient(app)
+        resp = client.get("/api/scan-stream", params={
+            "target_dir": str(self.target_dir),
+            "dest_dir": str(self.dest_dir),
+            "keywords": ["快递"],
+            "match_logic": "any",
+        })
+        self.assertEqual(resp.status_code, 200)
+        events = self._parse_sse(resp.text)
+        final = events[-1]
+        self.assertEqual(final["status"], "complete")
+        self.assertEqual(final["matched_files"], 0)
+        # No subdirectories should have been created
+        self.assertEqual(list(self.dest_dir.iterdir()), [])
+        self.assertFalse(ocr_engine._scan_in_progress)
+
+    def test_bad_target_dir_returns_400_and_no_lock(self):
+        """Non-existent target directory → 400; lock stays False."""
+        from fastapi.testclient import TestClient
+        from backend.app import app, ocr_engine
+
+        client = TestClient(app)
+        resp = client.get("/api/scan-stream", params={
+            "target_dir": str(self.target_dir / "nope"),
+            "dest_dir": str(self.dest_dir),
+            "keywords": ["发票"],
+            "match_logic": "any",
+        })
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(ocr_engine._scan_in_progress)
+
+
 if __name__ == '__main__':
     unittest.main()
