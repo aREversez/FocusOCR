@@ -840,8 +840,25 @@ function endScan(statusText, statusColor) {
 }
 
 // Lightbox controllers
+function _visibleMatches() {
+    const cards = elResultsGrid.querySelectorAll('.result-card');
+    const visible = [];
+    cards.forEach(card => {
+        if (card.style.display !== 'none') {
+            const path = card.dataset.originalPath;
+            const match = matchedFiles.find(m => m.original_path === path);
+            if (match) visible.push(match);
+        }
+    });
+    return visible;
+}
+
 function openLightbox(match, keywords) {
-    currentLightboxIndex = matchedFiles.findIndex(m => m.original_path === match.original_path);
+    const visible = _visibleMatches();
+    currentLightboxIndex = visible.findIndex(m => m.original_path === match.original_path);
+    if (currentLightboxIndex === -1) {
+        currentLightboxIndex = matchedFiles.findIndex(m => m.original_path === match.original_path);
+    }
     lightboxKeywords = keywords;
     
     const imgUrl = `/api/image?path=${encodeURIComponent(match.original_path)}`;
@@ -889,16 +906,19 @@ function openLightbox(match, keywords) {
 }
 
 function navigateLightbox(delta) {
+    const visible = _visibleMatches();
     const newIndex = currentLightboxIndex + delta;
-    if (newIndex < 0 || newIndex >= matchedFiles.length) return;
-    openLightbox(matchedFiles[newIndex], lightboxKeywords);
+    if (newIndex < 0 || newIndex >= visible.length) return;
+    openLightbox(visible[newIndex], lightboxKeywords);
 }
 
 function updateLightboxNav() {
-    const total = matchedFiles.length;
-    elLightboxPrev.style.display = currentLightboxIndex > 0 ? '' : 'none';
-    elLightboxNext.style.display = currentLightboxIndex < total - 1 ? '' : 'none';
-    elLightboxCounter.textContent = total > 0 ? `${currentLightboxIndex + 1} / ${total}` : '';
+    const visible = _visibleMatches();
+    const total = visible.length;
+    const idx = currentLightboxIndex;
+    elLightboxPrev.style.display = total > 0 && idx > 0 ? '' : 'none';
+    elLightboxNext.style.display = total > 0 && idx < total - 1 ? '' : 'none';
+    elLightboxCounter.textContent = total > 0 ? `${Math.min(idx + 1, total)} / ${total}` : '';
 }
 
 async function fetchImageInfo(path) {

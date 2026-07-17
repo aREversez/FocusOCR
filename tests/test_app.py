@@ -344,8 +344,8 @@ class TestScanStreamIntegration(unittest.TestCase):
     def tearDown(self):
         self.init_patcher.stop()
         # Ensure lock is not leaked between test runs
-        import backend.ocr_engine as oe_mod
-        oe_mod.OCREngine._scan_in_progress = False
+        from backend.app import ocr_engine
+        ocr_engine._scan_in_progress = False
         self.tmpdir.cleanup()
         if 'backend.app' in sys.modules:
             del sys.modules['backend.app']
