@@ -856,8 +856,10 @@ function _visibleMatches() {
 function openLightbox(match, keywords) {
     const visible = _visibleMatches();
     currentLightboxIndex = visible.findIndex(m => m.original_path === match.original_path);
+    // If match is somehow not in the visible list (e.g. new call path that
+    // bypasses card click), default to first visible item or 0.
     if (currentLightboxIndex === -1) {
-        currentLightboxIndex = matchedFiles.findIndex(m => m.original_path === match.original_path);
+        currentLightboxIndex = 0;
     }
     lightboxKeywords = keywords;
     
