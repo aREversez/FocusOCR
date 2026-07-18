@@ -34,6 +34,39 @@ into one file for convenience.
 
 ---
 
+## [V1.0.8] - 2026-07-14
+
+### Features
+- **Lightbox image navigation** — while previewing a matched image, press `←` / `→`
+  to jump to the previous / next match without leaving the lightbox. Floating circular
+  nav arrows sit in the dark screen margins (outside the image, so they never obscure
+  content), and an image counter (e.g. `3 / 12`) is centered at the top.
+- **Image info in preview** — new `GET /api/image-info` endpoint returns the image
+  width, height, and file size. The lightbox meta panel now shows the resolution and a
+  human-readable file size (e.g. `1291 × 800 · 97.7 KB`).
+
+### Performance & Robustness
+- **Cache auto-pruning** — the OCR cache (`ocr_cache/*.json`) and thumbnail cache
+  (`thumb_cache/*.webp`) are now periodically pruned so they can't grow without bound.
+  Two new settings, `max_ocr_cache_files` (default 5000) and `max_thumb_cache_files`
+  (default 3000), cap each cache; the oldest files (by mtime) beyond the limit are
+  deleted during normal cache writes.
+- **`prune_cache_dir` rewrite** — replaced the O(n²) `pop(0)` loop with a single slice,
+  and clarified the `max_files` contract: negative = unlimited (no prune), 0 = remove
+  all matching files, positive = keep at most N.
+
+### Testing & CI
+- **E2E scan-stream integration tests** — `TestScanStreamIntegration` drives the full
+  SSE scan pipeline through `fastapi.testclient.TestClient`: happy-path match + copy,
+  no-match / no-copy, and bad target dir → `400` with no scan-lock leak.
+- **`requirements-test.txt`** — new test-only dependency file pinning `httpx` (required
+  by `TestClient`). It is not bundled into the packaged app; CI installs it separately.
+- **Cross-platform CI** — the workflow now runs the matrix on `ubuntu-latest` **and**
+  `windows-latest` with `fail-fast: false`, so one OS failing no longer cancels the
+  other. Fixes the CI break where `TestClient` raised because `httpx` was absent.
+
+---
+
 ## [V1.0.7] - 2026-07-12
 
 ### Features
