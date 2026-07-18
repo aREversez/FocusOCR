@@ -6,36 +6,31 @@ into one file for convenience.
 
 ---
 
-## [V1.0.8] - 2026-07-14
+## [V1.0.9] - 2026-07-18
 
 ### Features
-- **Lightbox image navigation** — while previewing a matched image, press `←` / `→`
-  to jump to the previous / next match without leaving the lightbox. Floating circular
-  nav arrows sit in the dark screen margins (outside the image, so they never obscure
-  content), and an image counter (e.g. `3 / 12`) is centered at the top.
+- **Lightbox navigation redesigned** — Previous / Next buttons moved from floating
+  absolute-positioned circles on the image to clearly visible `[Previous]` / `[Next]`
+  buttons inside the lightbox meta panel, side-by-side with the position counter
+  (e.g. `3 / 12`). Keyboard left/right arrow keys continue to work. Navigation now
+  respects the client-side search filter — only visible (unhidden) results can be
+  cycled through, and the counter reflects the filtered count, not the total.
 - **Image info in preview** — new `GET /api/image-info` endpoint returns the image
-  width, height, and file size. The lightbox meta panel now shows the resolution and a
-  human-readable file size (e.g. `1291 × 800 · 97.7 KB`).
+  width, height, and file size. The lightbox meta panel shows both resolution and
+  human-readable file size (e.g. `1920 × 1080 · 1.2 MB`).
 
-### Performance & Robustness
-- **Cache auto-pruning** — the OCR cache (`ocr_cache/*.json`) and thumbnail cache
-  (`thumb_cache/*.webp`) are now periodically pruned so they can't grow without bound.
-  Two new settings, `max_ocr_cache_files` (default 5000) and `max_thumb_cache_files`
-  (default 3000), cap each cache; the oldest files (by mtime) beyond the limit are
-  deleted during normal cache writes.
-- **`prune_cache_dir` rewrite** — replaced the O(n²) `pop(0)` loop with a single slice,
-  and clarified the `max_files` contract: negative = unlimited (no prune), 0 = remove
-  all matching files, positive = keep at most N.
+### Bug Fixes
+- **Test `tearDown` lock reset** — `TestSSEEndToEnd.tearDown` was resetting
+  `_scan_in_progress` at the class level (`OCREngine._scan_in_progress = False`),
+  which cannot override instance attributes. Changed to reset on the actual engine
+  instance instead.
+- **onnxruntime version compatibility** — onnxruntime 1.27.0 removed
+  `GraphOptimizationLevel`, breaking `rapidocr-onnxruntime`. Pinned to `<1.22` in
+  `requirements.txt` to prevent accidental upgrades.
 
-### Testing & CI
-- **E2E scan-stream integration tests** — `TestScanStreamIntegration` drives the full
-  SSE scan pipeline through `fastapi.testclient.TestClient`: happy-path match + copy,
-  no-match / no-copy, and bad target dir → `400` with no scan-lock leak.
-- **`requirements-test.txt`** — new test-only dependency file pinning `httpx` (required
-  by `TestClient`). It is not bundled into the packaged app; CI installs it separately.
-- **Cross-platform CI** — the workflow now runs the matrix on `ubuntu-latest` **and**
-  `windows-latest` with `fail-fast: false`, so one OS failing no longer cancels the
-  other. Fixes the CI break where `TestClient` raised because `httpx` was absent.
+### Maintenance
+- `requirements.txt` — onnxruntime upper-bound set to `<1.22`.
+- `requirements-test.txt` — new file (test-only `httpx` dependency, not bundled).
 
 ---
 
